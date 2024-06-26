@@ -1,0 +1,24 @@
+version: '2.1'
+services:
+  haskell-dev:
+    image: "gastonmartinezcastro/haskell-dev1"
+    command: sleep infinity
+    volumes:
+      - ..:/workspace:cached
+      - haskell-cabal-cache:/root/.cache
+      - haskell-cabal-files:/root/.local
+      - haskell-cabal-config:/root/.config
+      - haskell-stack-files:/root/.stack
+      - haskell-stack-work:/workspace/.stack-work
+
+volumes:
+  haskell-cabal-cache:
+    external: true
+  haskell-cabal-files:
+    external: true
+  haskell-cabal-config:
+    external: true
+  haskell-stack-files:
+    name: haskell-stack-files
+  haskell-stack-work:
+    name: haskell-stack-work

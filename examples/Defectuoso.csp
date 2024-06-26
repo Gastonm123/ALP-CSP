@@ -1,0 +1,2 @@
+A = l -> c -> d -> B -- no existe B
+C = l -> c -> B -- falla antes

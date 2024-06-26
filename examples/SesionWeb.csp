@@ -1,0 +1,2 @@
+SESION = login -> crear_cookie -> dashboard -> logoff -> borrar_cookie -> SESION
+COOKIE = crear_cookie -> borrar_cookie -> COOKIE
