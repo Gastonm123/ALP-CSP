@@ -3,7 +3,7 @@
 
 module Interactive (interactive) where
 
-import CSP.AST
+import AST
 import Control.Monad
 import Control.Monad.Except
 import Control.Monad.ST
@@ -11,47 +11,90 @@ import Control.Monad.ST
 
 import Data.Char (isLower)
 import qualified Data.HashTable.ST.Basic as H
-import CSP.Eval
-import CSP.PrettyPrint
+import Eval
+import PrettyPrint
 import Prettyprinter
 -- Color
 
 import Prettyprinter.Render.Terminal (AnsiStyle, renderIO)
 import System.IO (hFlush, stdout)
+import Control.Parallel (par)
 
-interactive :: [Sentence] -> IO ()
-interactive prog = do
-  defines <- stToIO $ eval prog
-  interactive' defines (map SentG prog)
+somethingUndefined :: [Sentence] -> Bool
+somethingUndefined prog = let
+  defines = map (\(Assign id _) -> id) prog
 
-{- Interactive' es recursiva de cola. Para logralo se pasa una computacion
- - stateful de argumento: el estado de la iteracion anterior -}
-interactive' :: Namespace RealWorld -> [Generic] -> IO ()
-interactive' defines prog = do
+  isDefined  (ByName id) = id `elem` defines
+  isDefined  (ExternalChoice p q) = bothDefined p q
+  isDefined  (InternalChoice p q) = bothDefined p q
+  isDefined  (Parallel p q) = bothDefined p q
+  isDefined  (Sequential p q) = bothDefined p q
+  isDefined  (Prefix _ p) = isDefined p
+  isDefined  (Interrupt p q) = bothDefined p q
+  isDefined  (Stop) = True
+  isDefined  (Skip) = True
+  isDefined  _ = error "undefined"
+  isDefined' (Assign _ p) = isDefined p
+
+  bothDefined p q = isDefined p `par` isDefined q `par` (isDefined p || isDefined q)
+
+  in
+    not (all isDefined' prog)
+
+{- Arguments:
+ -   erandom: random number generator from system entropy or user-provided seed
+ -   prog: list of sentences in a CSP file
+ - Returns:
+ -   io: input-output thread with stateful computations
+ -}
+interactive :: EvalRandom RealWorld -> [Sentence] -> IO ()
+interactive erandom prog = 
+  if somethingUndefined prog
+  then renderIO
+      stdout
+      ( layoutPretty
+          defaultLayoutOptions
+          ( annotate errorStyle (pretty ("!! Error: Hay algun simbolo indefinido") <> hardline)
+          )
+      )
+  else do
+    defines <- stToIO $ eval prog
+    interactive' defines erandom (map SentG prog)
+
+{- Arguments:
+ -   defines: hashtable of the program symbols (probably overkill)
+ -   erandom: random number generator from system entropy or user-provided seed
+ -   prog: list of sentences, errors, or processes which comprise the program
+ -         state
+ - Returns:
+ -   io: input-output thread with stateful computations
+ -}
+interactive' :: Namespace RealWorld -> EvalRandom RealWorld -> [Generic] -> IO ()
+interactive' defines erandom prog = do
   printProgState defines prog
   putStr "CSP> "
   hFlush stdout
   line <- getLine
   case parseLine line of
     (Right events) ->
-      let runProg = do
-            -- ST s [Either EvalError Proc]
+      let runProg :: IO [Generic]
+          runProg = do
             forM
               prog
               ( \case
                   (SentG (Assign _ q)) -> do
-                    let evalRes = evalProcStar defines q
-                    runStar evalRes events
+                    let evalRes = evalProcStar defines erandom q
+                    q1 <- stToIO $ runStar evalRes events
+                    return (ProcG q1)
                   (ProcG p) -> do
-                    let evalRes = evalProcStar defines p
-                    runStar evalRes events
-                  (Error err) -> return (throwError err)
+                    let evalRes = evalProcStar defines erandom p
+                    q1 <- stToIO $ runStar evalRes events
+                    return (ProcG q1)
+                  (Error err) -> return (Error err)
               )
-          format :: ST s [Either EvalError Proc] -> ST s [Generic]
-          format = fmap (map (either Error ProcG))
        in do
-            prog' <- stToIO $ format runProg
-            interactive' defines prog'
+            prog' <- runProg
+            interactive' defines erandom prog'
     (Left error) -> do
       renderIO
         stdout
@@ -60,7 +103,7 @@ interactive' defines prog = do
             ( annotate errorStyle (pretty ("!! " ++ error) <> hardline)
             )
         )
-      interactive' defines prog
+      interactive' defines erandom prog
 
 parseLine :: String -> Either String [Event]
 parseLine s = parseLine' s []

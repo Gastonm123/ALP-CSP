@@ -17,7 +17,7 @@
 --
 -- This library deals with evaluation of abstract syntax trees of CSP.
 
-module CSP.Eval (
+module Eval (
   evalSent,
   eval,
   evalProc,
@@ -29,7 +29,7 @@ module CSP.Eval (
   EvalStarResult(..),
 ) where
 
-import CSP.AST
+import AST
 import Control.Monad
 import Control.Monad.ST
 import qualified Data.HashTable.ST.Basic as H

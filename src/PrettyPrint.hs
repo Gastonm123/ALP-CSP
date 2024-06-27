@@ -7,8 +7,8 @@
 --
 -- This library deals with pretty printing errors, sentences and processes
 
-module CSP.PrettyPrint (prettyPrint, Generic(..), errorStyle) where
-import CSP.AST
+module PrettyPrint (prettyPrint, Generic(..), errorStyle) where
+import AST
 import Prettyprinter.Render.Terminal
 import Prettyprinter
 

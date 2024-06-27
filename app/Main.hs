@@ -1,30 +1,34 @@
 {-# LANGUAGE MultiWayIf #-}
 module Main (main) where
 
-import           CSP.Parser
+import           Parser
 import           System.Console.GetOpt
 import qualified System.Environment            as Env
-import           CSP.AST
+import           AST
 import           Interactive
 
 import           Prettyprinter -- Doc
 import           Prettyprinter.Render.Terminal  (AnsiStyle)
-import           CSP.PrettyPrint                (prettyPrint, Generic(..))
-import Prelude hiding (error)
+import           PrettyPrint                    (prettyPrint, Generic(..))
 
+import           System.Random                  (mkStdGen, initStdGen)
+import           System.Random.Stateful         (newSTGenM)
+import           Control.Monad.ST               (stToIO)
+
+import           Prelude hiding (error)
 ---------------------------------------------------------
 
 data Options = Options
   { optPrint :: Bool
   , optAST   :: Bool
-  , optEval  :: Int
+  , optSeed  :: Int
   , optHelp  :: Bool
   }
   deriving Show
 
 defaultOptions :: Options
 defaultOptions =
-  Options { optPrint = False, optAST = False, optEval = 0, optHelp = False } 
+  Options { optPrint = False, optAST = False, optSeed = 0, optHelp = False } 
 
 options :: [OptDescr (Options -> Options)]
 options =
@@ -36,10 +40,10 @@ options =
            ["AST"]
            (NoArg (\opts -> opts { optAST = True }))
            "Mostrar el AST del programa de entrada."
-  , Option ['e']
-           ["evaluator"]
-           (ReqArg (\s opts -> opts { optEval = read s }) "N_EVALUADOR")
-           "Elegir evaluador 1, 2 o 3."
+  , Option ['s']
+           ["seed"]
+           (ReqArg (\s opts -> opts { optSeed = read s + 1}) "SEMILLA")
+           "Usar una semilla para el generador de numeros aleatorios."
   , Option ['h']
            ["help"]
            (NoArg (\opts -> opts { optHelp = True }))
@@ -68,7 +72,12 @@ runOptions fp opts
       Ok prog -> if
         | optAST opts       -> print prog
         | optPrint opts     -> do
-          let hangPrint :: Sentence -> Doc AnsiStyle
-              hangPrint p = hang 4 (prettyPrint (SentG p))
-          print (vcat (map hangPrint prog))
-        | otherwise         -> interactive prog
+            let hangPrint :: Sentence -> Doc AnsiStyle
+                hangPrint p = hang 4 (prettyPrint (SentG p))
+            print (vcat (map hangPrint prog))
+        | otherwise         -> do
+            gen <- if optSeed opts /= 0
+                  then return (mkStdGen (optSeed opts))
+                  else initStdGen
+            erandom <- stToIO $ newSTGenM gen
+            interactive erandom prog

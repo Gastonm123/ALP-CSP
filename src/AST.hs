@@ -10,7 +10,7 @@
 --
 -- This library provides the structure of abstract syntax trees
 
-module CSP.AST (
+module AST (
   ProcId,
   Event,
   Proc (..),

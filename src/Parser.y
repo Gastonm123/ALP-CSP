@@ -7,12 +7,12 @@
 -- Stability   :  -
 --
 -- This library deals with parsing a CSP file or CSP single line.
-module CSP.Parser (
+module Parser (
   file_parse,
   line_parse,
   ParseResult (..)
 ) where
-import CSP.AST
+import AST
 import Data.Char
 }
 
