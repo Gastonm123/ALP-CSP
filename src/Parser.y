@@ -31,7 +31,7 @@ import Data.Char
   '->'       { TokenArrow }
   '[]'       { TokenExternalChoice }
   '|~|'      { TokenInternalChoice }
-  '|||'      { TokenParallel }
+  '||'       { TokenParallel }
   '|'        { TokenLabeledAlternative }
   '/\\'      { TokenInterrupt }
   ';'        { TokenSequential }
@@ -42,8 +42,9 @@ import Data.Char
   '('        { TokenOpenBrack }
   ')'        { TokenCloseBrack }
   '='        { TokenEquals }
+  '=='       { TokenCompare }
 
-%left '|||' ';'
+%left '||' ';'
 %left '/\\'
 %left '|~|' '[]' '|'
 %right '->'
@@ -56,6 +57,7 @@ Declarations :: { [Sentence] }
 
 Declaration :: { Sentence }
             : ProcId '=' Proc   { Assign $1 $3 }
+            | Proc '==' Proc    { Compare $1 $3 }
 
 LabeledAlt :: { [(Event, Proc)] }
            : Event '->' Proc '|' LabeledAlt1      { ($1, $3) : $5 }
@@ -71,11 +73,11 @@ Proc :: { Proc }
      | Proc '|~|' Proc          { InternalChoice $1 $3 }
      | Proc '/\\' Proc          { Interrupt $1 $3 }
      | Proc ';' Proc            { Sequential $1 $3 }
-     | Proc '|||' Proc          { Parallel $1 $3 }
+     | Proc '||' Proc          { Parallel $1 $3 }
      | STOP                     { Stop }
      | SKIP                     { Skip }
      | ProcId                   { ByName $1 }
-     | '(' Proc ')'             { $2 }
+     | '(' Proc ')'             { Paren $2 }
 
 {
 
@@ -97,6 +99,7 @@ data Token
   | TokenLabeledAlternative
   | TokenEOF
   | TokenEquals
+  | TokenCompare
   deriving (Eq, Show)
 
 data ParseResult a = Ok a | Failed String deriving Show
@@ -141,18 +144,21 @@ lexer cont s = case s of
                     (')':cs) -> cont TokenCloseBrack cs
                     ('[':(']':cs)) -> cont TokenExternalChoice cs
                     ('|':('~':('|':cs))) -> cont TokenInternalChoice cs
-                    ('|':('|':('|':cs))) -> cont TokenParallel cs
+                    ('|':('|':cs)) -> cont TokenParallel cs
                     ('|':cs) -> cont TokenLabeledAlternative cs
                     (';':cs) -> cont TokenSequential cs
+                    ('=':('=':cs)) -> cont TokenCompare cs
                     ('=':cs) -> cont TokenEquals cs
                     unknown -> \line -> Failed $ 
                      "Linea "++(show line)++": No se puede reconocer "++(show $ take 10 unknown)++ "..."
-                    where lexAlpha cs = case span isAlpha cs of
+                    where lexAlpha cs = case span isAlphaNum cs of
                               ("STOP", rest) -> cont TokenStop rest
                               ("SKIP", rest) -> cont TokenSkip rest
                               (name, rest)
-                                         | all isLower name -> cont (TokenEvent name) rest
-                                         | all isUpper name -> cont (TokenProcId name) rest
+                                         | isLower (head name) 
+                                            && all ((||) <$> isLower <*> isNumber) name -> cont (TokenEvent name) rest
+                                         | isUpper (head name)
+                                            && all ((||) <$> isUpper <*> isNumber) name -> cont (TokenProcId name) rest
                                          | True -> \ line -> Failed $ "Linea "++(show line)++": Nombre invalido ( "++name++" )\n"
                           consumirBK anidado cl cont s = case s of
                               ('-':('-':cs)) -> consumirBK anidado cl cont $ dropWhile ((/=) '\n') cs

@@ -1,0 +1,13 @@
+P = p -> P
+Q = q -> Q
+R = r -> R
+P1 = p1 -> P1
+
+P || P == P
+P || Q == Q || P
+P || (Q || R) == (P || Q) || R
+P || (Q [] R) == (P || Q) [] (P || R) -- Esta ley no vale what?
+
+q -> P || p -> Q == STOP                 -- Deadlock
+e -> P || e -> Q == e -> (P || Q)        -- Sincronizacion
+f -> P || p -> Q == f -> (P || p -> Q)   -- Eventos independientes

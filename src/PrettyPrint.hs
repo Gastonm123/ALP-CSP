@@ -20,6 +20,7 @@ errorStyle = color Red <> bold
 -- Usamos fillSep para que se corten las lineas largas en varias lineas
 prettyPrint :: Generic -> Doc AnsiStyle
 prettyPrint (SentG (Assign p q)) = fillSep [pretty p, pretty "=", prettyPrint (ProcG q)]
+prettyPrint (SentG (Compare p q)) = fillSep [prettyPrint (ProcG p), pretty "==", prettyPrint (ProcG q)]
 prettyPrint (ProcG (InternalChoice p q)) = fillSep [prettyPrint (ProcG p), pretty "|~|", prettyPrint (ProcG q)]
 prettyPrint (ProcG (ExternalChoice p q)) = fillSep [prettyPrint (ProcG p), pretty "[]", prettyPrint (ProcG q)]
 prettyPrint (ProcG (Parallel p q)) = fillSep [prettyPrint (ProcG p), pretty "||", prettyPrint (ProcG q)]
@@ -27,6 +28,7 @@ prettyPrint (ProcG (Sequential p q)) = fillSep [prettyPrint (ProcG p), pretty ";
 prettyPrint (ProcG (Prefix pref q)) = fillSep [pretty pref, pretty "->", prettyPrint (ProcG q)]
 prettyPrint (ProcG (Interrupt p q)) = fillSep [prettyPrint (ProcG p), pretty " /\\ ", prettyPrint (ProcG q)]
 prettyPrint (ProcG (ByName p)) = pretty p
+prettyPrint (ProcG (Paren p)) = pretty "(" <> prettyPrint (ProcG p) <> pretty ")"
 prettyPrint (ProcG Stop) = pretty "STOP"
 prettyPrint (ProcG Skip) = pretty "SKIP"
 prettyPrint (Error err) = annotate errorStyle (pretty ("* " ++ err ++ " *"))

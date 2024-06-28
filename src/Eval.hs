@@ -7,9 +7,10 @@
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# HLINT ignore "Redundant if" #-}
 {-# HLINT ignore "Redundant bracket" #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 -- |
--- Module      :  CSP.Eval
+-- Module      :  Eval
 -- Copyright   :  -
 -- License     :  -
 -- Maintainer  :  -
@@ -30,14 +31,21 @@ module Eval (
 ) where
 
 import AST
-import Control.Monad
-import Control.Monad.ST
+    ( Sentence(Assign),
+      Proc(Skip, InternalChoice, ExternalChoice, Parallel, Sequential,
+           Prefix, Interrupt, ByName, Paren, Stop),
+      Event,
+      ProcId )
+import Control.Monad ( foldM, forM_ )
+import Control.Monad.ST ( ST )
 import qualified Data.HashTable.ST.Basic as H
 import System.Random.Stateful (STGenM, StdGen, applySTGen)
 import System.Random (random, RandomGen)
 
+hashtableSize :: Int
 hashtableSize = 50
 
+success :: String
 success = "/"
 
 type HashTable s k v = H.HashTable s k v
@@ -45,13 +53,6 @@ type HashTable s k v = H.HashTable s k v
 type Namespace s = HashTable s ProcId Proc
 
 {- STGenM no es apto para concurrencia -}
-{- En caso de usar STGen:
- - Para que no haya problemas de coherencia se debe garantizar que Run y Refusal
- - llaman la misma cantidad de veces a random en respuesta a cada evento. 
- - En la version actual, las llamadas a Run ocurren solo luego de que Refusal
- - devuelva que el evento no es rechazado. Entonces, algunas llamadas a Run no
- - se realizan
- -}
 type EvalRandom s = STGenM StdGen s
 
 type Set s = HashTable s ProcId Bool
@@ -67,9 +68,24 @@ type Prog = [Sentence]
        c   d
 -}
 
+{- Evaluate a single sentence
+ - Arguments:
+ -    defines: record of the program symbols
+ -    sentence: a sentence from the program
+ - Returns:
+ -    st: stateful computations
+ -}
 evalSent :: Namespace s -> Sentence -> ST s ()
 evalSent defines (Assign id p) = H.insert defines id p
+evalSent _ _ = return ()
 
+{- Evaluate a single sentence
+ - Arguments:
+ -    prog: program
+ - Returns:
+ -    st namespace: stateful computation with the record of
+ -      all program symbols
+ -}
 eval :: Prog -> ST s (Namespace s)
 eval prog = do
   defines <- H.newSized hashtableSize
@@ -78,19 +94,26 @@ eval prog = do
 
 type Run = Event -> Proc
 
--- type Run = Event -> Either EvalError Proc
-
 type Refusal = Event -> Bool
-
--- type Refusal = Event -> Either EvalError Bool
 
 data EvalResult = EvalResult {run :: Run, refusal :: Refusal}
 
 data EvalStarResult s = EvalStarResult
   { runStar :: [Event] -> ST s (Proc),
-    refusalStar :: [Event] -> ST s ([Event])
+    refusalStar :: [Event] -> ST s ([Event]),
+    trace :: [Event] -> ST s ([Event])
   }
 
+{- Evaluate a process and produce a run and a refuse function
+ - Arguments:
+ -    defines: record of the program symbols
+ -    random: random number generator from system entropy or
+ -      user-provided seed
+ -    p: a process from the program
+ - Returns:
+ -    st evalresult: stateful computations with a run and a
+ -      refuse function
+ -}
 evalProc :: Namespace s -> EvalRandom s -> Proc -> ST s EvalResult
 evalProc defines random p =
   case p of
@@ -110,7 +133,10 @@ evalProc defines random p =
     (ByName q) -> do
       definition <- H.lookup defines q
       case definition of
-        Just q' -> evalProc defines random q'
+        Just q' -> 
+          wrapResult 
+            <$> runByName defines random q q'
+            <*> refusalByName defines random q q'
         Nothing -> error "Evaluation error: Some process has an undefined process ( " ++ q ++ " )\n" `seq` return ignore
     (InternalChoice q r) ->
       wrapResult
@@ -129,6 +155,20 @@ evalProc defines random p =
               (refusal q')
     (Stop) -> return ignore
     (Skip) -> return ignore -- No contamos el evento interno "/"
+    (Paren p) -> do
+      evalP <- evalProc defines random p
+      return $
+        wrapResult
+          (\ev -> let
+            removeParen (Paren Skip) = Skip
+            removeParen (Paren Stop) = Stop
+            removeParen (Paren (Prefix ev q)) = Prefix ev q
+            removeParen (Paren (ByName q)) = ByName q
+            removeParen (Paren (Paren q)) = Paren q
+            removeParen q = q
+            in
+              removeParen (Paren (run evalP ev)))
+          (refusal evalP)
     (Interrupt q r) ->
       wrapResult
         <$> runInterrupt defines random q r
@@ -138,12 +178,27 @@ evalProc defines random p =
     wrapResult run refusal = EvalResult {run = run, refusal = refusal}
     ignore = EvalResult { run = const p, refusal = const True }
 
+
+{- Evaluate a process and produce a run and a refuse function
+ -   that accept many events
+ - Arguments:
+ -    defines: record of the program symbols
+ -    random: random number generator from system entropy or
+ -      user-provided seed
+ -    p: a process from the program
+ - Returns:
+ -    st evalresult: stateful computations with a run and a
+ -      refuse function
+ -}
 evalProcStar :: Namespace s -> EvalRandom s -> Proc -> EvalStarResult s
 evalProcStar defines random p =
   let runStar' = foldM evalRun p
       refusalStar' evs = do
         (_, refusals) <- foldM evalRunRefuse (p, []) evs
         return refusals
+      trace' evs = do
+        (_, trace) <- foldM evalRunTrace (p, []) evs
+        return trace
       evalRun q ev = do
             r <- evalProc defines random q
             return (run r ev)
@@ -154,8 +209,18 @@ evalProcStar defines random p =
             if refusal'
               then return (run', ev : refusals)
               else return (run', refusals)
-   in EvalStarResult {runStar = runStar', refusalStar = refusalStar'}
+      evalRunTrace (q', trace) ev = do
+            r <- evalProc defines random q'
+            let run' = run r ev
+            let refusal' = refusal r ev
+            if refusal'
+              then return (run', trace)
+              else return (run', ev : trace)
+   in EvalStarResult {runStar = runStar', refusalStar = refusalStar', trace = trace'}
 
+{- Semantics of interrupt: try to run `r` or run `q`. If
+ - `q` is run then `r` is still interrupting
+ -}
 runInterrupt :: Namespace s -> EvalRandom s -> Proc -> Proc -> ST s Run
 runInterrupt defines random q r = let
   runInter :: Namespace s -> EvalRandom s -> ST s Run
@@ -165,10 +230,13 @@ runInterrupt defines random q r = let
     return (\ev ->
       if not (refusal r' ev)
         then run r' ev
-        else run q' ev)
+        else (Interrupt (run q' ev) r))
   in
     runInter defines random
 
+{- Semantics of interrupt: try to run `r` or run `q`. If 
+ - `r` accepts then accept, else if `q` accepts accept
+ -}
 refusalInterrupt :: Namespace s -> EvalRandom s -> Proc -> Proc -> ST s Refusal
 refusalInterrupt defines random q r = let
   runInter :: Namespace s -> EvalRandom s -> ST s Refusal
@@ -182,6 +250,9 @@ refusalInterrupt defines random q r = let
   in
     runInter defines random
 
+{- Semantics of internal choice: random between running `q`
+ - or `r`
+ -}
 runInternalChoice :: Namespace s -> EvalRandom s -> Proc -> Proc -> ST s Run
 runInternalChoice ns erandom q r = let
   run_q :: Namespace s -> EvalRandom s -> ST s Run -- No pueden usarse ns y erandom del scope :C
@@ -204,17 +275,21 @@ runInternalChoice ns erandom q r = let
       then run_q ns erandom
       else run_r ns erandom
 
+{- Random entre rechazar como `q` o `r`.
+ - Puede haber un problema de coherencia si se paraleliza
+ - el evaluador cada hilo recibi
+ -}
 refusalInternalChoice :: Namespace s -> EvalRandom s -> Proc -> Proc -> ST s Refusal
 refusalInternalChoice ns erandom q r = let
-  run_q :: Namespace s -> EvalRandom s -> ST s Refusal -- No pueden usarse ns y erandom del scope :C
-  run_q ns erandom = do
+  refusal_q :: Namespace s -> EvalRandom s -> ST s Refusal -- No pueden usarse ns y erandom del scope :C
+  refusal_q ns erandom = do
     q' <- evalProc ns erandom q
     return (\ev ->
       if refusal q' ev
         then True
         else False)
-  run_r :: Namespace s -> EvalRandom s -> ST s Refusal
-  run_r ns erandom = do
+  refusal_r :: Namespace s -> EvalRandom s -> ST s Refusal
+  refusal_r ns erandom = do
     r' <- evalProc ns erandom r
     return (\ev ->
       if refusal r' ev
@@ -223,8 +298,23 @@ refusalInternalChoice ns erandom q r = let
   in do
     flip <- applySTGen (random :: RandomGen g => g -> (Int, g)) erandom
     if even flip
-      then run_q ns erandom
-      else run_r ns erandom
+      then refusal_q ns erandom
+      else refusal_r ns erandom
+
+{- Ejecutar el proceso `q` -}
+runByName :: Namespace s -> EvalRandom s -> ProcId -> Proc -> ST s Run
+runByName ns random name q = do
+  q' <- evalProc ns random q
+  return (\ev ->
+      if refusal q' ev
+        then (ByName name)
+        else run q' ev)
+
+{- Rechazar como el proceso `q` -}
+refusalByName :: Namespace s -> EvalRandom s -> ProcId -> Proc -> ST s Refusal
+refusalByName ns random _ q = do
+  q' <- evalProc ns random q
+  return (refusal q')
 
 runParallel :: Namespace s -> EvalRandom s -> Proc -> Proc -> ST s Run
 runParallel ns random q r = do
@@ -365,6 +455,7 @@ alpha' ns seen (ByName p) = do
           H.insert seen p True
           alpha' ns seen q
         Nothing -> error "Evaluation error: Current process has an undefined process ( " ++ p ++ " )\n" `seq` return []
+alpha' ns seen (Paren p) = alpha' ns seen p
 alpha' _ _ Stop = return []
 alpha' _ _ Skip = return [success]
 alpha' _ _ _ = return [success]

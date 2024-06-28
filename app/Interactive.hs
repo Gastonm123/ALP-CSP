@@ -1,28 +1,56 @@
 {-# LANGUAGE LambdaCase #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+{-# HLINT ignore "Redundant bracket" #-}
 
 module Interactive (interactive) where
 
-import AST
-import Control.Monad
-import Control.Monad.Except
-import Control.Monad.ST
+import Control.Monad ( forM )
+import Control.Monad.Except ( MonadError(throwError) )
+import Control.Monad.ST ( RealWorld, stToIO, ST )
 -- Doc
 
-import Data.Char (isLower)
-import qualified Data.HashTable.ST.Basic as H
+import Data.Char (isLower, isNumber)
 import Eval
-import PrettyPrint
+    ( eval,
+      evalProcStar,
+      EvalRandom,
+      EvalStarResult(runStar, trace),
+      Namespace,
+      Prog )
+import PrettyPrint ( errorStyle, prettyPrint, Generic(..) )
 import Prettyprinter
--- Color
+    ( Doc,
+      annotate,
+      defaultLayoutOptions,
+      hang,
+      hardline,
+      indent,
+      layoutPretty,
+      line,
+      vcat,
+      Pretty(pretty) )
 
 import Prettyprinter.Render.Terminal (AnsiStyle, renderIO)
 import System.IO (hFlush, stdout)
 import Control.Parallel (par)
+import AST
+    ( Proc(Skip, ByName, ExternalChoice, InternalChoice, Parallel,
+           Sequential, Prefix, Interrupt, Stop),
+      Sentence(Compare, Assign),
+      Event )
 
-somethingUndefined :: [Sentence] -> Bool
+{- Traverses the program looking for undefined symbols
+ - Arguments:
+ -    prog: program
+ - Returns:
+ -    z: true if there is some symbol undefined
+ -}
+somethingUndefined :: Prog -> Bool
 somethingUndefined prog = let
-  defines = map (\(Assign id _) -> id) prog
+  defines = map (\case
+                    (Assign id _) -> id
+                    _ -> "") prog
 
   isDefined  (ByName id) = id `elem` defines
   isDefined  (ExternalChoice p q) = bothDefined p q
@@ -35,6 +63,7 @@ somethingUndefined prog = let
   isDefined  (Skip) = True
   isDefined  _ = error "undefined"
   isDefined' (Assign _ p) = isDefined p
+  isDefined' (Compare p q) = bothDefined p q
 
   bothDefined p q = isDefined p `par` isDefined q `par` (isDefined p || isDefined q)
 
@@ -43,11 +72,11 @@ somethingUndefined prog = let
 
 {- Arguments:
  -   erandom: random number generator from system entropy or user-provided seed
- -   prog: list of sentences in a CSP file
+ -   prog: list of sentences in a CSP file (program)
  - Returns:
  -   io: input-output thread with stateful computations
  -}
-interactive :: EvalRandom RealWorld -> [Sentence] -> IO ()
+interactive :: EvalRandom RealWorld -> Prog -> IO ()
 interactive erandom prog = 
   if somethingUndefined prog
   then renderIO
@@ -71,7 +100,7 @@ interactive erandom prog =
  -}
 interactive' :: Namespace RealWorld -> EvalRandom RealWorld -> [Generic] -> IO ()
 interactive' defines erandom prog = do
-  printProgState defines prog
+  printProgState prog
   putStr "CSP> "
   hFlush stdout
   line <- getLine
@@ -86,6 +115,17 @@ interactive' defines erandom prog = do
                     let evalRes = evalProcStar defines erandom q
                     q1 <- stToIO $ runStar evalRes events
                     return (ProcG q1)
+                  (SentG (Compare p q)) -> do
+                    let evalP = evalProcStar defines erandom p
+                    let evalQ = evalProcStar defines erandom q
+                    traceP <- stToIO $ trace evalP events 
+                    traceQ <- stToIO $ trace evalQ events
+                    if (traceP /= traceQ)
+                      then return (Error (show (prettyPrint (SentG (Compare p q)))))
+                      else do
+                        p1 <- stToIO $ runStar evalP events
+                        q1 <- stToIO $ runStar evalQ events
+                        return (SentG (Compare p1 q1))
                   (ProcG p) -> do
                     let evalRes = evalProcStar defines erandom p
                     q1 <- stToIO $ runStar evalRes events
@@ -105,26 +145,45 @@ interactive' defines erandom prog = do
         )
       interactive' defines erandom prog
 
+{- Parse interactive CLI input
+ - Arguments:
+ -    s: interactive CLI input
+ - Returns:
+ -    e: either a list of user-provided events or an error
+ -}
 parseLine :: String -> Either String [Event]
 parseLine s = parseLine' s []
 
+{- Parse interactive CLI input
+ - Arguments:
+ -    s: interactive CLI input
+ -    acc: accumulated events
+ - Returns:
+ -    e: either a list of user-provided events or an error
+ -}
 parseLine' :: String -> [Event] -> Either String [Event]
 parseLine' s acc = case s of
   [] -> return acc
   (' ' : cs) -> parseLine' cs acc
   (c : cs)
     | isLower c ->
-        let (event, rest) = span isLower (c : cs)
+        let (event, rest) = span ((||) <$> isLower <*> isNumber) (c : cs)
          in parseLine' rest (event : acc)
     | True -> throwError ("Error de escritura en el simbolo " ++ [c])
 
-printProgState :: Namespace RealWorld -> [Generic] -> IO ()
-printProgState defines prog =
+{- Print all sentences, processes and errors in the program state
+ - Arguments:
+ -    prog: program
+ - Returns:
+ -    io: input-output action that prints the program state
+ -}
+printProgState :: [Generic] -> IO ()
+printProgState prog =
   let progState :: ST RealWorld (Doc AnsiStyle)
       progState = do
-        prog' <- mapM (replaceByDef defines) prog
+        -- prog' <- mapM (replaceByDef defines) prog
         let hangPrint gen = hang 4 (prettyPrint gen)
-        return (vcat (map hangPrint prog'))
+        return (vcat (map hangPrint prog))
    in do
         doc <- stToIO progState
         renderIO
@@ -134,8 +193,10 @@ printProgState defines prog =
               (indent 4 doc <> line)
           )
 
+{-
 replaceByDef :: Namespace RealWorld -> Generic -> ST RealWorld Generic
 replaceByDef defines (ProcG (ByName p)) =
   maybe (Error (p ++ " Simbolo no definido")) ProcG
     <$> H.lookup defines p
 replaceByDef _ generic = return generic
+-}

@@ -2,7 +2,7 @@
 {-# LANGUAGE StandaloneDeriving #-}
 
 -- |
--- Module      :  CSP.AST
+-- Module      :  AST
 -- Copyright   :  -
 -- License     :  -
 -- Maintainer  :  -
@@ -35,6 +35,7 @@ data Proc where
   Stop :: Proc
   Skip :: Proc
   LabeledAlt :: [(Event, Proc)] -> Proc
+  Paren :: Proc -> Proc
 
 deriving instance Show Proc
 
@@ -43,6 +44,7 @@ deriving instance Eq Proc
 -- Sentencias
 data Sentence
   = Assign ProcId Proc
+  | Compare Proc Proc
   deriving (Show, Eq)
 
 -- data Error = DivByZero | UndefVar deriving (Eq, Show)
