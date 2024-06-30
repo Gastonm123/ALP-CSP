@@ -65,7 +65,7 @@ somethingUndefined prog = let
   isDefined' (Assign _ p) = isDefined p
   isDefined' (Compare p q) = bothDefined p q
 
-  bothDefined p q = isDefined p `par` isDefined q `par` (isDefined p || isDefined q)
+  bothDefined p q = isDefined p `par` isDefined q `par` (isDefined p && isDefined q)
 
   in
     not (all isDefined' prog)

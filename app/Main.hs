@@ -9,7 +9,7 @@ import           Interactive
 
 import           Prettyprinter -- Doc
 import           Prettyprinter.Render.Terminal  (AnsiStyle)
-import           PrettyPrint                    (prettyPrint, Generic(..))
+import           PrettyPrint                    (prettyPrint)
 
 import           System.Random                  (mkStdGen, initStdGen)
 import           System.Random.Stateful         (newSTGenM)
@@ -68,7 +68,7 @@ runOptions fp opts
   | otherwise = do
     s <- readFile fp
     case file_parse s of
-      Failed error -> print error
+      Failed error -> print (pretty error)
       Ok prog -> if
         | optAST opts       -> print prog
         | optPrint opts     -> do

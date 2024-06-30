@@ -59,25 +59,25 @@ Declaration :: { Sentence }
             : ProcId '=' Proc   { Assign $1 $3 }
             | Proc '==' Proc    { Compare $1 $3 }
 
-LabeledAlt :: { [(Event, Proc)] }
-           : Event '->' Proc '|' LabeledAlt1      { ($1, $3) : $5 }
+LabeledAlt :: { Proc }
+           : Event '->' Proc '|' LabeledAlt1      { ExternalChoice (Prefix $1 $3) $5 }
            
-LabeledAlt1 :: { [(Event, Proc)] }
-            : Event '->' Proc                     { [($1, $3)] }
-            | Event '->' Proc '|' LabeledAlt1     { ($1, $3) : $5 }
+LabeledAlt1 :: { Proc }
+            : Event '->' Proc                     { Prefix $1 $3 }
+            | Event '->' Proc '|' LabeledAlt1     { ExternalChoice (Prefix $1 $3) $5 }
 
 Proc :: { Proc }
-     : LabeledAlt               { LabeledAlt $1 }
+     : LabeledAlt               { $1 }
      | Event '->' Proc          { Prefix $1 $3 }
      | Proc '[]' Proc           { ExternalChoice $1 $3 }
      | Proc '|~|' Proc          { InternalChoice $1 $3 }
      | Proc '/\\' Proc          { Interrupt $1 $3 }
      | Proc ';' Proc            { Sequential $1 $3 }
-     | Proc '||' Proc          { Parallel $1 $3 }
+     | Proc '||' Proc           { Parallel $1 $3 }
      | STOP                     { Stop }
      | SKIP                     { Skip }
      | ProcId                   { ByName $1 }
-     | '(' Proc ')'             { Paren $2 }
+     | '(' Proc ')'             { $2 }
 
 {
 
@@ -127,7 +127,7 @@ catchP m k = \s l ->
 
 
 parseError :: Token -> P a
-parseError  tok s i = Failed $ "Linea "++(show i)++": Error de parseo en el token "++(show tok)++"\n"
+parseError  tok s i = Failed $ "Linea "++(show i)++": Error de parseo en el token "++(show tok)
 
 lexer cont s = case s of
                     [] -> cont TokenEOF []
@@ -159,7 +159,7 @@ lexer cont s = case s of
                                             && all ((||) <$> isLower <*> isNumber) name -> cont (TokenEvent name) rest
                                          | isUpper (head name)
                                             && all ((||) <$> isUpper <*> isNumber) name -> cont (TokenProcId name) rest
-                                         | True -> \ line -> Failed $ "Linea "++(show line)++": Nombre invalido ( "++name++" )\n"
+                                         | True -> \ line -> Failed $ "Linea "++(show line)++": Nombre invalido ( "++name++" )"
                           consumirBK anidado cl cont s = case s of
                               ('-':('-':cs)) -> consumirBK anidado cl cont $ dropWhile ((/=) '\n') cs
                               ('{':('-':cs)) -> consumirBK (anidado+1) cl cont cs	

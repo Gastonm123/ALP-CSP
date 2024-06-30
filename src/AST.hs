@@ -14,7 +14,8 @@ module AST (
   ProcId,
   Event,
   Proc (..),
-  Sentence (..))
+  Sentence (..),
+  Generic (..))
 where
 
 -- Identificadores de Procesos y Eventos
@@ -34,8 +35,6 @@ data Proc where
   ByName :: ProcId -> Proc
   Stop :: Proc
   Skip :: Proc
-  LabeledAlt :: [(Event, Proc)] -> Proc
-  Paren :: Proc -> Proc
 
 deriving instance Show Proc
 
@@ -46,6 +45,9 @@ data Sentence
   = Assign ProcId Proc
   | Compare Proc Proc
   deriving (Show, Eq)
+
+-- Generic container
+data Generic = SentG Sentence | ProcG Proc | Error String -- similar a un OR
 
 -- data Error = DivByZero | UndefVar deriving (Eq, Show)
 

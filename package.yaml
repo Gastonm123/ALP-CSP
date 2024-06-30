@@ -29,6 +29,7 @@ dependencies:
 - ansi-terminal == 1.0
 - random == 1.2.1.2
 - parallel == 3.2.2.0
+- containers == 0.6.8
 
 ghc-options:
 - -Wall
@@ -57,7 +58,7 @@ executables:
 
 tests:
   CSP-stack-test:
-    main:                Spec.hs
+    main:                TestSuite.hs
     source-dirs:         test
     ghc-options:
     - -threaded

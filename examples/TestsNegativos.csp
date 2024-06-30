@@ -1,0 +1,7 @@
+-- El objetivo es probar cosas que ciertamente no deberian
+-- ser iguales
+
+P = p -> P
+Q = q -> Q
+
+P == Q

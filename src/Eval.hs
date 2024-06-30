@@ -28,12 +28,13 @@ module Eval (
   Prog,
   EvalResult(..),
   EvalStarResult(..),
+  alpha
 ) where
 
 import AST
     ( Sentence(Assign),
       Proc(Skip, InternalChoice, ExternalChoice, Parallel, Sequential,
-           Prefix, Interrupt, ByName, Paren, Stop),
+           Prefix, Interrupt, ByName, Stop),
       Event,
       ProcId )
 import Control.Monad ( foldM, forM_ )
@@ -155,20 +156,6 @@ evalProc defines random p =
               (refusal q')
     (Stop) -> return ignore
     (Skip) -> return ignore -- No contamos el evento interno "/"
-    (Paren p) -> do
-      evalP <- evalProc defines random p
-      return $
-        wrapResult
-          (\ev -> let
-            removeParen (Paren Skip) = Skip
-            removeParen (Paren Stop) = Stop
-            removeParen (Paren (Prefix ev q)) = Prefix ev q
-            removeParen (Paren (ByName q)) = ByName q
-            removeParen (Paren (Paren q)) = Paren q
-            removeParen q = q
-            in
-              removeParen (Paren (run evalP ev)))
-          (refusal evalP)
     (Interrupt q r) ->
       wrapResult
         <$> runInterrupt defines random q r
@@ -177,7 +164,6 @@ evalProc defines random p =
   where
     wrapResult run refusal = EvalResult {run = run, refusal = refusal}
     ignore = EvalResult { run = const p, refusal = const True }
-
 
 {- Evaluate a process and produce a run and a refuse function
  -   that accept many events
@@ -455,7 +441,5 @@ alpha' ns seen (ByName p) = do
           H.insert seen p True
           alpha' ns seen q
         Nothing -> error "Evaluation error: Current process has an undefined process ( " ++ p ++ " )\n" `seq` return []
-alpha' ns seen (Paren p) = alpha' ns seen p
 alpha' _ _ Stop = return []
 alpha' _ _ Skip = return [success]
-alpha' _ _ _ = return [success]
