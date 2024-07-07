@@ -40,7 +40,7 @@ import AST
 import Control.Monad ( foldM, forM_ )
 import Control.Monad.ST ( ST )
 import qualified Data.HashTable.ST.Basic as H
-import System.Random.Stateful (STGenM, StdGen, applySTGen)
+import System.Random.Stateful (STGenM, StdGen, applySTGen, TGen, STGen (unSTGen), FrozenGen (thawGen, freezeGen), RandomGen (genWord8))
 import System.Random (random, RandomGen)
 
 hashtableSize :: Int
@@ -54,7 +54,7 @@ type HashTable s k v = H.HashTable s k v
 type Namespace s = HashTable s ProcId Proc
 
 {- STGenM no es apto para concurrencia -}
-type EvalRandom s = STGenM StdGen s
+type EvalRandom = STGen StdGen
 
 type Set s = HashTable s ProcId Bool
 
@@ -115,7 +115,7 @@ data EvalStarResult s = EvalStarResult
  -    st evalresult: stateful computations with a run and a
  -      refuse function
  -}
-evalProc :: Namespace s -> EvalRandom s -> Proc -> ST s EvalResult
+evalProc :: Namespace s -> EvalRandom -> Proc -> ST s EvalResult
 evalProc defines random p =
   case p of
     (ExternalChoice q r) ->
@@ -176,7 +176,7 @@ evalProc defines random p =
  -    st evalresult: stateful computations with a run and a
  -      refuse function
  -}
-evalProcStar :: Namespace s -> EvalRandom s -> Proc -> EvalStarResult s
+evalProcStar :: Namespace s -> EvalRandom -> Proc -> EvalStarResult s
 evalProcStar defines random p =
   let runStar' = foldM evalRun p
       refusalStar' evs = do
@@ -207,9 +207,9 @@ evalProcStar defines random p =
 {- Semantics of interrupt: try to run `r` or run `q`. If
  - `q` is run then `r` is still interrupting
  -}
-runInterrupt :: Namespace s -> EvalRandom s -> Proc -> Proc -> ST s Run
+runInterrupt :: Namespace s -> EvalRandom -> Proc -> Proc -> ST s Run
 runInterrupt defines random q r = let
-  runInter :: Namespace s -> EvalRandom s -> ST s Run
+  runInter :: Namespace s -> EvalRandom -> ST s Run
   runInter defines random = do
     r' <- evalProc defines random r
     q' <- evalProc defines random q
@@ -223,9 +223,9 @@ runInterrupt defines random q r = let
 {- Semantics of interrupt: try to run `r` or run `q`. If 
  - `r` accepts then accept, else if `q` accepts accept
  -}
-refusalInterrupt :: Namespace s -> EvalRandom s -> Proc -> Proc -> ST s Refusal
+refusalInterrupt :: Namespace s -> EvalRandom -> Proc -> Proc -> ST s Refusal
 refusalInterrupt defines random q r = let
-  runInter :: Namespace s -> EvalRandom s -> ST s Refusal
+  runInter :: Namespace s -> EvalRandom -> ST s Refusal
   runInter defines random = do
     r' <- evalProc defines random r
     q' <- evalProc defines random q
@@ -239,16 +239,16 @@ refusalInterrupt defines random q r = let
 {- Semantics of internal choice: random between running `q`
  - or `r`
  -}
-runInternalChoice :: Namespace s -> EvalRandom s -> Proc -> Proc -> ST s Run
+runInternalChoice :: Namespace s -> EvalRandom -> Proc -> Proc -> ST s Run
 runInternalChoice ns erandom q r = let
-  run_q :: Namespace s -> EvalRandom s -> ST s Run -- No pueden usarse ns y erandom del scope :C
+  run_q :: Namespace s -> EvalRandom -> ST s Run -- No pueden usarse ns y erandom del scope :C
   run_q ns erandom = do
     q' <- evalProc ns erandom q
     return (\ev ->
       if refusal q' ev
         then (InternalChoice q r)
         else run q' ev)
-  run_r :: Namespace s -> EvalRandom s -> ST s Run
+  run_r :: Namespace s -> EvalRandom -> ST s Run
   run_r ns erandom = do
     r' <- evalProc ns erandom q
     return (\ev ->
@@ -256,25 +256,28 @@ runInternalChoice ns erandom q r = let
         then (InternalChoice q r)
         else run r' ev)
   in do
-    flip <- (applySTGen (random :: RandomGen g => g -> (Int, g))  erandom)
+    {-unfrozenGen <- thawGen erandom
+    flip <- applySTGen (random :: RandomGen g => g -> (Int, g)) unfrozenGen
+    -}
+    let (flip, erandom') = genWord8 erandom
     if even flip
-      then run_q ns erandom
-      else run_r ns erandom
+      then run_q ns erandom'
+      else run_r ns erandom'
 
 {- Random entre rechazar como `q` o `r`.
  - Puede haber un problema de coherencia si se paraleliza
  - el evaluador cada hilo recibi
  -}
-refusalInternalChoice :: Namespace s -> EvalRandom s -> Proc -> Proc -> ST s Refusal
+refusalInternalChoice :: Namespace s -> EvalRandom -> Proc -> Proc -> ST s Refusal
 refusalInternalChoice ns erandom q r = let
-  refusal_q :: Namespace s -> EvalRandom s -> ST s Refusal -- No pueden usarse ns y erandom del scope :C
+  refusal_q :: Namespace s -> EvalRandom -> ST s Refusal -- No pueden usarse ns y erandom del scope :C
   refusal_q ns erandom = do
     q' <- evalProc ns erandom q
     return (\ev ->
       if refusal q' ev
         then True
         else False)
-  refusal_r :: Namespace s -> EvalRandom s -> ST s Refusal
+  refusal_r :: Namespace s -> EvalRandom -> ST s Refusal
   refusal_r ns erandom = do
     r' <- evalProc ns erandom r
     return (\ev ->
@@ -282,13 +285,13 @@ refusalInternalChoice ns erandom q r = let
         then True
         else False)
   in do
-    flip <- applySTGen (random :: RandomGen g => g -> (Int, g)) erandom
+    let (flip, erandom') = genWord8 erandom
     if even flip
-      then refusal_q ns erandom
-      else refusal_r ns erandom
+      then refusal_q ns erandom'
+      else refusal_r ns erandom'
 
 {- Ejecutar el proceso `q` -}
-runByName :: Namespace s -> EvalRandom s -> ProcId -> Proc -> ST s Run
+runByName :: Namespace s -> EvalRandom -> ProcId -> Proc -> ST s Run
 runByName ns random name q = do
   q' <- evalProc ns random q
   return (\ev ->
@@ -297,12 +300,12 @@ runByName ns random name q = do
         else run q' ev)
 
 {- Rechazar como el proceso `q` -}
-refusalByName :: Namespace s -> EvalRandom s -> ProcId -> Proc -> ST s Refusal
+refusalByName :: Namespace s -> EvalRandom -> ProcId -> Proc -> ST s Refusal
 refusalByName ns random _ q = do
   q' <- evalProc ns random q
   return (refusal q')
 
-runParallel :: Namespace s -> EvalRandom s -> Proc -> Proc -> ST s Run
+runParallel :: Namespace s -> EvalRandom -> Proc -> Proc -> ST s Run
 runParallel ns random q r = do
   alph_q <- alpha ns q
   alph_r <- alpha ns r
@@ -333,7 +336,7 @@ runParallel ns random q r = do
 
   return runPar
 
-refusalParallel :: Namespace s -> EvalRandom s -> Proc -> Proc -> ST s Refusal
+refusalParallel :: Namespace s -> EvalRandom -> Proc -> Proc -> ST s Refusal
 refusalParallel ns random q r = do
   alph_q <- alpha ns q
   alph_r <- alpha ns r
@@ -372,7 +375,7 @@ refusalPrefix pref _ =
           else False
    in refusalPref
 
-runExternalChoice :: Namespace s -> EvalRandom s -> Proc -> Proc -> ST s Run
+runExternalChoice :: Namespace s -> EvalRandom -> Proc -> Proc -> ST s Run
 runExternalChoice defines random q r = do
   q' <- evalProc defines random q
   r' <- evalProc defines random r
@@ -390,7 +393,7 @@ runExternalChoice defines random q r = do
 
   return runExt
 
-refusalExternalChoice :: Namespace s -> EvalRandom s -> Proc -> Proc -> ST s Refusal
+refusalExternalChoice :: Namespace s -> EvalRandom -> Proc -> Proc -> ST s Refusal
 refusalExternalChoice defines random q r = do
   q' <- evalProc defines random q
   r' <- evalProc defines random r
@@ -420,16 +423,12 @@ alpha' ns seen (InternalChoice p q) = (liftA2 ++) <$> alpha' seen p <*> alpha' s
 -}
 alpha' ns seen (ExternalChoice p q) = (++) <$> alpha' ns seen p <*> alpha' ns seen q
 alpha' ns seen (Parallel p q) = (++) <$> alpha' ns seen p <*> alpha' ns seen q
-alpha' ns seen (Sequential p q) = do
-  --- caso interesante
-  alph_p <- alpha' ns seen p
-  alph_q <- alpha' ns seen q
-  return (success : (alph_p ++ alph_q))
+alpha' ns seen (Interrupt p q) = (++) <$> alpha' ns seen p <*> alpha' ns seen q
+alpha' ns seen (Sequential p q) = (++) <$> alpha' ns seen p <*> alpha' ns seen q
 alpha' ns seen (Prefix pref q) = do
   --- caso interesante
   events <- alpha' ns seen q
   return (pref : events)
-alpha' ns seen (Interrupt p q) = (++) <$> alpha' ns seen p <*> alpha' ns seen q
 alpha' ns seen (ByName p) = do
   is_seen <- H.lookup seen p
   case is_seen of

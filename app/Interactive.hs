@@ -39,6 +39,7 @@ import AST
            Sequential, Prefix, Interrupt, Stop),
       Sentence(Compare, Assign),
       Event )
+import Debug.Trace (traceShowM)
 
 {- Traverses the program looking for undefined symbols
  - Arguments:
@@ -76,7 +77,7 @@ somethingUndefined prog = let
  - Returns:
  -   io: input-output thread with stateful computations
  -}
-interactive :: EvalRandom RealWorld -> Prog -> IO ()
+interactive :: EvalRandom -> Prog -> IO ()
 interactive erandom prog = 
   if somethingUndefined prog
   then renderIO
@@ -98,7 +99,7 @@ interactive erandom prog =
  - Returns:
  -   io: input-output thread with stateful computations
  -}
-interactive' :: Namespace RealWorld -> EvalRandom RealWorld -> [Generic] -> IO ()
+interactive' :: Namespace RealWorld -> EvalRandom -> [Generic] -> IO ()
 interactive' defines erandom prog = do
   printProgState prog
   putStr "CSP> "
@@ -120,8 +121,14 @@ interactive' defines erandom prog = do
                     let evalQ = evalProcStar defines erandom q
                     traceP <- stToIO $ trace evalP events 
                     traceQ <- stToIO $ trace evalQ events
+                    {-
+                    traceShowM events
+                    traceShowM traceP
+                    traceShowM traceQ
+                    -}
                     if (traceP /= traceQ)
-                      then return (Error (show (prettyPrint (SentG (Compare p q)))))
+                      then do
+                        return (Error (show (prettyPrint (SentG (Compare p q)))))
                       else do
                         p1 <- stToIO $ runStar evalP events
                         q1 <- stToIO $ runStar evalQ events
@@ -152,7 +159,9 @@ interactive' defines erandom prog = do
  -    e: either a list of user-provided events or an error
  -}
 parseLine :: String -> Either String [Event]
-parseLine s = parseLine' s []
+parseLine s = do
+  evs <- parseLine' s []
+  return (reverse evs)
 
 {- Parse interactive CLI input
  - Arguments:

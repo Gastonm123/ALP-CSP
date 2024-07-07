@@ -4,8 +4,9 @@ import AST
 import Eval
 import PrettyPrint
 import Control.Monad.ST
-import System.Random.Stateful (newSTGenM, mkStdGen)
+import System.Random.Stateful (newSTGenM, mkStdGen, FrozenGen (freezeGen))
 import Control.Monad (forM)
+import Debug.Trace (traceShowId, traceM, traceShowM)
 
 {- Copy-pasta from Interactive.hs
  - Arguments:
@@ -16,25 +17,30 @@ import Control.Monad (forM)
  - Returns:
  -    st generic: result of run (error, or advanced version of p)
  -}
-runGenWithEvents :: Namespace s -> EvalRandom s -> Generic -> [Event] -> ST s Generic
+runGenWithEvents :: Namespace s -> EvalRandom -> Generic -> [Event] -> ST s Generic
 runGenWithEvents defines erandom p evs = case p of
   (SentG (Assign _ q)) -> do
     let evalRes = evalProcStar defines erandom q
     q1 <- runStar evalRes evs
     return (ProcG q1)
-  (SentG (Compare p q)) -> do
-    let evalP = evalProcStar defines erandom p
+  (SentG (Compare q r)) -> do
     let evalQ = evalProcStar defines erandom q
-    traceP <- trace evalP evs 
-    traceQ <- trace evalQ evs
-    if (traceP /= traceQ)
-      then return (Error (show (prettyPrint (SentG (Compare p q)))))
+    let evalR = evalProcStar defines erandom r
+    traceQ <- trace evalQ evs 
+    traceR <- trace evalR evs
+    if (traceQ /= traceR)
+      then do
+        {-traceShowM evs
+        traceShowM traceQ
+        traceShowM traceR
+        traceShowM p-}
+        return $ traceShowId (Error (show (prettyPrint (SentG (Compare q r)))))
       else do
-        p1 <- runStar evalP evs
-        q1 <- runStar evalQ evs
+        p1 <- runStar evalQ evs
+        q1 <- runStar evalR evs
         return (SentG (Compare p1 q1))
-  (ProcG p) -> do
-    let evalRes = evalProcStar defines erandom p
+  (ProcG q) -> do
+    let evalRes = evalProcStar defines erandom q
     q1 <- runStar evalRes evs
     return (ProcG q1)
   (Error err) -> return (Error err)
@@ -50,8 +56,9 @@ runProgWithEvents :: Prog -> [Event] -> ST s [Generic]
 runProgWithEvents prog evs = do
   namespace <- eval prog
   erandom <- newSTGenM (mkStdGen 2024)
+  frozenRand <- freezeGen erandom
   let progG = map SentG prog
-  forM progG (flip (runGenWithEvents namespace erandom) evs)
+  forM progG (flip (runGenWithEvents namespace frozenRand) evs)
 
 {- Single automated run. Useful for tests
  - Arguments:
@@ -64,5 +71,6 @@ runProgWithEvents prog evs = do
 runProgWithEvents' :: Namespace s -> Prog -> [Event] -> ST s [Generic]
 runProgWithEvents' namespace prog evs = do
   erandom <- newSTGenM (mkStdGen 2024)
+  frozenRand <- freezeGen erandom
   let progG = map SentG prog
-  forM progG (flip (runGenWithEvents namespace erandom) evs)
+  forM progG (flip (runGenWithEvents namespace frozenRand) evs)

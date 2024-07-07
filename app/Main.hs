@@ -12,7 +12,7 @@ import           Prettyprinter.Render.Terminal  (AnsiStyle)
 import           PrettyPrint                    (prettyPrint)
 
 import           System.Random                  (mkStdGen, initStdGen)
-import           System.Random.Stateful         (newSTGenM)
+import           System.Random.Stateful         (newSTGenM, FrozenGen (freezeGen))
 import           Control.Monad.ST               (stToIO)
 
 import           Prelude hiding (error)
@@ -79,5 +79,7 @@ runOptions fp opts
             gen <- if optSeed opts /= 0
                   then return (mkStdGen (optSeed opts))
                   else initStdGen
-            erandom <- stToIO $ newSTGenM gen
-            interactive erandom prog
+            frozenRand <- stToIO $ do
+              erandom <- newSTGenM gen
+              freezeGen erandom
+            interactive frozenRand prog

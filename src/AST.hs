@@ -47,7 +47,7 @@ data Sentence
   deriving (Show, Eq)
 
 -- Generic container
-data Generic = SentG Sentence | ProcG Proc | Error String -- similar a un OR
+data Generic = SentG Sentence | ProcG Proc | Error String deriving Show -- similar a un OR
 
 -- data Error = DivByZero | UndefVar deriving (Eq, Show)
 

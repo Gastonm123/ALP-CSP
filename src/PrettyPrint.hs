@@ -19,23 +19,19 @@ errorStyle :: AnsiStyle
 errorStyle = color Red <> bold
 
 {- Precedencia:
-->   precede a  (7)
-|    precede a  (6)
-[]   precede a  (5)
-|~|  precede a  (4)
-/\   precede a  (3)
-;    precede a  (2)
-||   precede a  (1)
+->              precede a  (4)
+| [] |~|        precede a  (3)
+/\              precede a  (2)
+; ||            precede a  (1)
 void            (0)
 -}
 
--- Uso record patterns 
 precedence :: Proc -> Maybe Int
-precedence (Prefix _ _) = Just 7
-precedence (ExternalChoice _ _) = Just 5
-precedence (InternalChoice _ _) = Just 4
-precedence (Interrupt _ _) = Just 3
-precedence (Sequential _ _) = Just 2
+precedence (Prefix _ _) = Just 4
+precedence (ExternalChoice _ _) = Just 3
+precedence (InternalChoice _ _) = Just 3
+precedence (Interrupt _ _) = Just 2
+precedence (Sequential _ _) = Just 1
 precedence (Parallel _ _) = Just 1
 precedence _ = Nothing
 

@@ -2,22 +2,23 @@
 {-# LANGUAGE LambdaCase #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# HLINT ignore "Avoid lambda" #-}
+{-# HLINT ignore "Redundant bracket" #-}
 module Main (main) where
 
-import Utils
-import Parser
-import Eval
-import AST
+import Utils ( runProgWithEvents' )
+import Parser ( file_parse, ParseResult(Failed, Ok) )
+import Eval ( Prog, Namespace, alpha, eval )
+import AST ( Event, Generic(Error), Sentence(Assign, Compare) )
 
-import System.IO (IO(..))
-import Control.Monad (forM, forM_, replicateM)
+import Control.Monad (forM, replicateM)
 import Control.Monad.State.Strict (state, evalState)
 import System.Random (randoms, mkStdGen)
 import Control.Monad.ST (stToIO, ST)
 import Data.Maybe (fromJust)
 import Data.List (findIndex)
 import qualified Data.Set as Set
-import Prettyprinter
+import Prettyprinter ( (<+>), indent, Pretty(pretty), hsep, vsep )
+import PrettyPrint (prettyPrint)
 
 data Test = Test { name :: String, file :: String }
 
@@ -61,13 +62,13 @@ runTests = do
             pretty "[TestSuite] Archivo cargado"
             <+> pretty (file t)
           return [p]
-        (Failed error) -> do
+        (Failed parseError) -> do
           print $
             pretty "[TestSuite] Error cargando"
             <+> pretty (file t)
             <> pretty "\n"
             <> pretty "    Error:"
-            <+> pretty error
+            <+> pretty parseError
           return [])
   let progs = concat progs'
   
