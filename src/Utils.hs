@@ -6,7 +6,6 @@ import PrettyPrint
 import Control.Monad.ST
 import System.Random.Stateful (newSTGenM, mkStdGen, FrozenGen (freezeGen))
 import Control.Monad (forM)
-import Debug.Trace (traceShowId, traceM, traceShowM)
 
 {- Copy-pasta from Interactive.hs
  - Arguments:
@@ -28,13 +27,13 @@ runGenWithEvents defines erandom p evs = case p of
     let evalR = evalProcStar defines erandom r
     traceQ <- trace evalQ evs 
     traceR <- trace evalR evs
-    if (traceQ /= traceR)
+    if traceQ /= traceR
       then do
         {-traceShowM evs
         traceShowM traceQ
         traceShowM traceR
         traceShowM p-}
-        return $ traceShowId (Error (show (prettyPrint (SentG (Compare q r)))))
+        return (Error (show (prettyPrint (SentG (Compare q r)))))
       else do
         p1 <- runStar evalQ evs
         q1 <- runStar evalR evs

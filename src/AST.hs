@@ -15,14 +15,30 @@ module AST (
   Event,
   Proc (..),
   Sentence (..),
-  Generic (..))
+  Generic (..),
+  Channel (..),
+  Expression (..))
 where
 
 -- Identificadores de Procesos y Eventos
 type ProcId = String -- a:String { uppercase a }
--- type Variable = String -- a:String { lowercase a }
 
 type Event = String -- a:String { lowercase a }
+
+type ChannelName = String
+type Variable = String
+data Channel
+  = In ChannelName Variable
+  | Out ChannelName Expression
+  deriving (Show, Eq)
+
+data Expression
+  = Suma Expression Expression
+  | Producto Expression Expression
+  | Resta Expression Expression
+  | Division Expression Expression
+  | Variable Variable
+  deriving (Show, Eq)
 
 -- Procesos
 data Proc where
@@ -31,6 +47,7 @@ data Proc where
   Parallel :: Proc -> Proc -> Proc
   Sequential :: Proc -> Proc -> Proc
   Prefix :: Event -> Proc -> Proc
+  -- Channel :: Channel -> Proc -> Proc
   Interrupt :: Proc -> Proc -> Proc
   ByName :: ProcId -> Proc
   Stop :: Proc

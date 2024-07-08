@@ -4,7 +4,8 @@ module RunnableProc (ProcRep (..), RunnableProc (..)) where
 import AST ( Event, ProcId )
 
 -- Proccess view from datatype a
-data ProcRep a = ExternalChoiceRep a a
+data ProcRep a
+  = ExternalChoiceRep a a
   | InternalChoiceRep a a
   | PrefixRep Event a
   | ParallelRep a a
@@ -20,4 +21,5 @@ class RunnableProc a where
   refusal :: a -> Event -> Bool
   inAlpha :: a -> Event -> Bool
   asProc :: a -> ProcRep a
+  fromProc :: ProcRep a -> a
   findProc :: a -> ProcId -> a

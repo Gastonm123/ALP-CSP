@@ -135,6 +135,16 @@ instance RunnableProc RuntimeProc where
     Just p -> rt {runtimeProc = p}
     Nothing -> error "Evaluation error: Current process has an undefined process ( " ++ name ++ " )" `seq` rt
 
+  fromProc (InternalChoiceRep p q) = p {runtimeProc = InternalChoice (runtimeProc p)
+                                                                     (runtimeProc q)}
+  fromProc (ExternalChoiceRep p q) = p {runtimeProc = ExternalChoice (runtimeProc p)
+                                                                     (runtimeProc q)}
+  fromProc (ParallelRep p q) = p {runtimeProc = Parallel (runtimeProc p) (runtimeProc q)}
+  fromProc (InterruptRep p q) = p {runtimeProc = Interrupt (runtimeProc p) (runtimeProc q)}
+  fromProc (SequentialRep p q) = p {runtimeProc = Sequential (runtimeProc p) (runtimeProc q)}
+  fromProc (PrefixRep pref p) = p {runtimeProc = Prefix pref (runtimeProc p)}
+  fromProc _ = error "Evaluation error: Trying to get environment from unexpected process representation"
+
 {- Ya que recorremos el arbol, vamos a sacar toda la informacion posible -}
 {- Returns: (run rt ev, accept rt ev, inAlpha rt ev) -}
 run' :: RuntimeProc -> Event -> (RuntimeProc, Bool, Bool)
