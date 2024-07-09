@@ -20,6 +20,8 @@ class RunnableProc a where
   accept :: a -> Event -> Bool
   refusal :: a -> Event -> Bool
   inAlpha :: a -> Event -> Bool
+  getAlpha :: a -> [Event]
   asProc :: a -> ProcRep a
   fromProc :: ProcRep a -> a
   findProc :: a -> ProcId -> a
+

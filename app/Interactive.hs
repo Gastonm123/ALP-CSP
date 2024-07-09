@@ -18,20 +18,18 @@ import Eval
       EvalStarResult(runStar, trace),
       Namespace,
       Prog )
-import PrettyPrint ( errorStyle, prettyPrint, Generic(..) )
+import PrettyPrint ( errorStyle, prettyPrint, Generic(..), render )
 import Prettyprinter
     ( Doc,
       annotate,
-      defaultLayoutOptions,
       hang,
       hardline,
       indent,
-      layoutPretty,
       line,
       vcat,
       Pretty(pretty) )
 
-import Prettyprinter.Render.Terminal (AnsiStyle, renderIO)
+import Prettyprinter.Render.Terminal (AnsiStyle)
 import System.IO (hFlush, stdout)
 import Control.Parallel (par)
 import AST
@@ -39,7 +37,6 @@ import AST
            Sequential, Prefix, Interrupt, Stop),
       Sentence(Compare, Assign),
       Event )
-import Debug.Trace (traceShowM)
 
 {- Traverses the program looking for undefined symbols
  - Arguments:
@@ -62,7 +59,6 @@ somethingUndefined prog = let
   isDefined  (Interrupt p q) = bothDefined p q
   isDefined  (Stop) = True
   isDefined  (Skip) = True
-  isDefined  _ = error "undefined"
   isDefined' (Assign _ p) = isDefined p
   isDefined' (Compare p q) = bothDefined p q
 
@@ -80,13 +76,7 @@ somethingUndefined prog = let
 interactive :: EvalRandom -> Prog -> IO ()
 interactive erandom prog = 
   if somethingUndefined prog
-  then renderIO
-      stdout
-      ( layoutPretty
-          defaultLayoutOptions
-          ( annotate errorStyle (pretty ("!! Error: Hay algun simbolo indefinido") <> hardline)
-          )
-      )
+  then render (Prettyprinter.annotate errorStyle (Prettyprinter.pretty ("!! Error: Hay algun simbolo indefinido") <> Prettyprinter.hardline))
   else do
     defines <- stToIO $ eval prog
     interactive' defines erandom (map SentG prog)
@@ -143,13 +133,7 @@ interactive' defines erandom prog = do
             prog' <- runProg
             interactive' defines erandom prog'
     (Left error) -> do
-      renderIO
-        stdout
-        ( layoutPretty
-            defaultLayoutOptions
-            ( annotate errorStyle (pretty ("!! " ++ error) <> hardline)
-            )
-        )
+      render ( Prettyprinter.annotate errorStyle (Prettyprinter.pretty ("!! " ++ error) <> Prettyprinter.hardline) )
       interactive' defines erandom prog
 
 {- Parse interactive CLI input
@@ -188,19 +172,14 @@ parseLine' s acc = case s of
  -}
 printProgState :: [Generic] -> IO ()
 printProgState prog =
-  let progState :: ST RealWorld (Doc AnsiStyle)
+  let progState :: ST RealWorld (Prettyprinter.Doc AnsiStyle)
       progState = do
         -- prog' <- mapM (replaceByDef defines) prog
-        let hangPrint gen = hang 4 (prettyPrint gen)
-        return (vcat (map hangPrint prog))
+        let hangPrint gen = Prettyprinter.hang 4 (prettyPrint gen)
+        return (Prettyprinter.vcat (map hangPrint prog))
    in do
         doc <- stToIO progState
-        renderIO
-          stdout
-          ( layoutPretty
-              defaultLayoutOptions
-              (indent 4 doc <> line)
-          )
+        render (Prettyprinter.indent 4 doc <> Prettyprinter.line)
 
 {-
 replaceByDef :: Namespace RealWorld -> Generic -> ST RealWorld Generic

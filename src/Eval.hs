@@ -36,12 +36,11 @@ import AST
       Proc(Skip, InternalChoice, ExternalChoice, Parallel, Sequential,
            Prefix, Interrupt, ByName, Stop),
       Event,
-      ProcId )
+      ProcId, Prefix (Event) )
 import Control.Monad ( foldM, forM_ )
 import Control.Monad.ST ( ST )
 import qualified Data.HashTable.ST.Basic as H
-import System.Random.Stateful (STGenM, StdGen, applySTGen, TGen, STGen (unSTGen), FrozenGen (thawGen, freezeGen), RandomGen (genWord8))
-import System.Random (random, RandomGen)
+import System.Random.Stateful (StdGen, STGen (unSTGen), RandomGen (genWord8))
 
 hashtableSize :: Int
 hashtableSize = 50
@@ -122,11 +121,12 @@ evalProc defines random p =
       wrapResult
         <$> runExternalChoice defines random q r
         <*> refusalExternalChoice defines random q r
-    (Prefix pref q) ->
-      return $
+    (Prefix pref q) -> let
+        (Event ev) = pref
+      in return $
         wrapResult
-          (runPrefix pref q)
-          (refusalPrefix pref q)
+          (runPrefix ev q)
+          (refusalPrefix ev q)
     (Parallel q r) ->
       wrapResult
         <$> runParallel defines random q r
@@ -160,7 +160,6 @@ evalProc defines random p =
       wrapResult
         <$> runInterrupt defines random q r
         <*> refusalInterrupt defines random q r
-    _ -> error ""
   where
     wrapResult run refusal = EvalResult {run = run, refusal = refusal}
     ignore = EvalResult { run = const p, refusal = const True }
@@ -363,7 +362,7 @@ runPrefix pref q =
       runPref ev =
         if ev == pref
           then q
-          else Prefix pref q
+          else Prefix (Event pref) q
    in runPref
 
 refusalPrefix :: Event -> Proc -> Refusal
@@ -428,7 +427,8 @@ alpha' ns seen (Sequential p q) = (++) <$> alpha' ns seen p <*> alpha' ns seen q
 alpha' ns seen (Prefix pref q) = do
   --- caso interesante
   events <- alpha' ns seen q
-  return (pref : events)
+  let (Event ev) = pref
+  return (ev : events)
 alpha' ns seen (ByName p) = do
   is_seen <- H.lookup seen p
   case is_seen of

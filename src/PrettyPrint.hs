@@ -8,12 +8,13 @@
 --
 -- This library deals with pretty printing errors, sentences and processes
 
-module PrettyPrint (prettyPrint, Generic(..), errorStyle) where
+module PrettyPrint (prettyPrint, Generic(..), errorStyle, render) where
 import AST
 import Prettyprinter.Render.Terminal
 import Prettyprinter
 import Prelude hiding (Left, Right)
 import Data.Maybe (fromJust)
+import System.IO (stdout)
 
 errorStyle :: AnsiStyle
 errorStyle = color Red <> bold
@@ -40,7 +41,6 @@ prettyPrint (SentG (Assign p q)) = fillSep [pretty p, pretty "=", prettyPrint (P
 prettyPrint (SentG (Compare p q)) = fillSep [prettyPrint (ProcG p), pretty "==", prettyPrint (ProcG q)]
 prettyPrint (ProcG p) = prettyPrint' p
 prettyPrint (Error err) = annotate errorStyle (pretty ("* " ++ err ++ " *"))
-prettyPrint _ = error "Not implemented"
 
 prettyPrint' :: Proc -> Doc AnsiStyle
 prettyPrint' (ByName p) = pretty p
@@ -48,13 +48,14 @@ prettyPrint' Stop = pretty "STOP"
 prettyPrint' Skip = pretty "SKIP"
 prettyPrint' (Prefix pref q) = let
     precedenceP = fromJust (precedence (Prefix pref q))
+    (Event ev) = pref
   in
     maybe
-      (fillSep [pretty pref, pretty "->", prettyPrint' q])
+      (fillSep [pretty ev, pretty "->", prettyPrint' q])
       (\precedenceQ ->
         if precedenceP > precedenceQ
-          then fillSep [pretty pref, pretty "->", paren (prettyPrint' q)]
-          else fillSep [pretty pref, pretty "->", prettyPrint' q])
+          then fillSep [pretty ev, pretty "->", paren (prettyPrint' q)]
+          else fillSep [pretty ev, pretty "->", prettyPrint' q])
       (precedence q)
 prettyPrint' p = let 
     (Binary assoc op q r) = fromBinary p
@@ -92,6 +93,9 @@ fromBinary (Parallel p q) = Binary Left "||" p q
 fromBinary (Sequential p q) = Binary Left ";" p q
 fromBinary (Interrupt p q) = Binary Left "/\\" p q
 fromBinary _ = error "Incomplete pattern matching in pretty printing"
+
+render :: Doc AnsiStyle -> IO ()
+render doc = renderIO stdout ( layoutPretty defaultLayoutOptions doc )
 
 {-
 data MProc = Binary String Proc Proc

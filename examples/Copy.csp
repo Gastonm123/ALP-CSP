@@ -1,0 +1,8 @@
+ENV = left!10 -> right?x -> ENV
+COPY = left?x -> right!x -> COPY
+
+-- Permitido por el parser
+COPY1 = left
+            ?x -> right
+                       !x
+                -> COPY1

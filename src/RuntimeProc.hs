@@ -1,18 +1,25 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE BlockArguments #-}
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+{-# HLINT ignore "Redundant if" #-}
 module RuntimeProc (
   initRuntime,
-  RuntimeProc(..)
+  RuntimeProc(..),
+  compare
 )where
 
-import AST
+import AST ( Proc(..), ProcId, Sentence(..), Event, Prefix (Event), Generic (SentG) )
 import RunnableProc (RunnableProc (..), ProcRep (..))
+import Traces ( traces, generateEvents, Trie (inTrie, mkTrie), TraceTrie )
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 import System.Random (StdGen, RandomGen (genWord8))
 import Control.Parallel (par)
 import Data.Foldable (Foldable(foldl'))
+import Debug.Trace (traceShow)
+import PrettyPrint (prettyPrint)
+import Data.Text.Prettyprint.Doc (Pretty(pretty))
 
 type Defines = Map.Map ProcId Proc
 type AlphaSymbols = Map.Map ProcId [Event]
@@ -51,7 +58,7 @@ alpha ns seen (ExternalChoice p q) = alpha ns seen p ++ alpha ns seen q
 alpha ns seen (Parallel p q) = alpha ns seen p ++ alpha ns seen q
 alpha ns seen (Sequential p q) = alpha ns seen p ++ alpha ns seen q
 alpha ns seen (Interrupt p q) = alpha ns seen p ++ alpha ns seen q
-alpha ns seen (Prefix pref q) = pref : alpha ns seen q
+alpha ns seen (Prefix pref q) = let (Event ev) = pref in ev : alpha ns seen q
 alpha ns seen (ByName p) = if p `Set.member` seen then [] else (case Map.lookup p ns of
     Just q -> alpha ns (Set.insert p seen) q
     Nothing -> error "Initialization error: Current process has an undefined process ( " ++ p ++ " )" `seq` [])
@@ -92,25 +99,28 @@ infixl 5 <|> -- operador para combinar run'
 (<|>) :: (a, b, Bool) -> (c, d, Bool) -> (a, b, Bool)
 (<|>) (a, b, c) (_, _, d) = (a, b, c || d)
 
-        
+
 instance RunnableProc RuntimeProc where
   run rt ev = fst3 (run' rt ev)
   accept rt ev = not (refusal rt ev)
   refusal rt ev = snd3 (run' rt ev)
-  
+
+  getAlpha rt = alpha (definitions rt) Set.empty (runtimeProc rt)
+
   inAlpha rt ev =
     case runtimeProc rt of
-      (InternalChoice p q) -> inAlpha (rt {runtimeProc = p}) ev || 
+      (InternalChoice p q) -> inAlpha (rt {runtimeProc = p}) ev ||
                               inAlpha (rt {runtimeProc = q}) ev
-      (ExternalChoice p q) -> inAlpha (rt {runtimeProc = p}) ev || 
+      (ExternalChoice p q) -> inAlpha (rt {runtimeProc = p}) ev ||
                               inAlpha (rt {runtimeProc = q}) ev
-      (Parallel p q) -> inAlpha (rt {runtimeProc = p}) ev || 
+      (Parallel p q) -> inAlpha (rt {runtimeProc = p}) ev ||
                         inAlpha (rt {runtimeProc = q}) ev
-      (Sequential p q) -> inAlpha (rt {runtimeProc = p}) ev || 
+      (Sequential p q) -> inAlpha (rt {runtimeProc = p}) ev ||
                           inAlpha (rt {runtimeProc = q}) ev
-      (Interrupt p q) -> inAlpha (rt {runtimeProc = p}) ev || 
+      (Interrupt p q) -> inAlpha (rt {runtimeProc = p}) ev ||
                         inAlpha (rt {runtimeProc = q}) ev
-      (Prefix pref p) -> pref == ev || inAlpha (rt {runtimeProc = p}) ev
+      (Prefix pref p) -> let (Event procEv) = pref in 
+                         procEv == ev || inAlpha (rt {runtimeProc = p}) ev
       (ByName p) -> case Map.lookup p (alphaSymbols rt) of
         Just alphaP -> ev `elem` alphaP
         Nothing -> error "Evaluation error: Current process has an undefined process ( " ++ p ++ " )" `seq` False
@@ -125,7 +135,7 @@ instance RunnableProc RuntimeProc where
       (Parallel p q) -> ParallelRep (rt {runtimeProc = p}) (rt {runtimeProc = q})
       (Sequential p q) -> SequentialRep (rt {runtimeProc = p}) (rt {runtimeProc = q})
       (Interrupt p q) -> InterruptRep (rt {runtimeProc = p}) (rt {runtimeProc = q})
-      (Prefix pref p) -> PrefixRep pref (rt {runtimeProc = p})
+      (Prefix pref p) -> let (Event ev) = pref in PrefixRep ev (rt {runtimeProc = p})
       (ByName p) -> ByNameRep p
       Stop -> StopRep
       Skip -> SkipRep
@@ -142,8 +152,10 @@ instance RunnableProc RuntimeProc where
   fromProc (ParallelRep p q) = p {runtimeProc = Parallel (runtimeProc p) (runtimeProc q)}
   fromProc (InterruptRep p q) = p {runtimeProc = Interrupt (runtimeProc p) (runtimeProc q)}
   fromProc (SequentialRep p q) = p {runtimeProc = Sequential (runtimeProc p) (runtimeProc q)}
-  fromProc (PrefixRep pref p) = p {runtimeProc = Prefix pref (runtimeProc p)}
+  fromProc (PrefixRep pref p) = p {runtimeProc = Prefix (Event pref) (runtimeProc p)}
   fromProc _ = error "Evaluation error: Trying to get environment from unexpected process representation"
+
+
 
 {- Ya que recorremos el arbol, vamos a sacar toda la informacion posible -}
 {- Returns: (run rt ev, accept rt ev, inAlpha rt ev) -}
@@ -191,7 +203,8 @@ run' rt ev =
       | snd3 r' -> r' <|> q'
       | snd3 q' -> ((fst3 q') {runtimeProc = Interrupt (runtimeProc $ fst3 q') r}, True, True)
       | otherwise -> (rt, False, False) <|> q' <|> r'
-    (Prefix pref q) -> if pref == ev 
+    (Prefix pref q) -> let (Event procEv) = pref in 
+        if procEv == ev
         then (rt {runtimeProc = q}, True, True)
         else (rt, False, inAlpha (rt {runtimeProc = q}) ev)
     (ByName p) -> case Map.lookup p (definitions rt) of
@@ -199,3 +212,27 @@ run' rt ev =
         Nothing -> error "Evaluation error: Current process has an undefined process ( " ++ p ++ " )" `seq` (rt, False, False)
     Stop -> (rt, False, False)
     Skip -> (rt, False, False)
+
+
+instance Eq RuntimeProc where
+  (==) rtA rtB =
+    let
+      randomGen = runtimeRandom rtA
+      alphaA = Set.fromList (getAlpha rtA)
+      alphaB = Set.fromList (getAlpha rtB)
+      tests = generateEvents rtA randomGen
+      tracesA = concatMap (traces rtA) tests
+      tracesB = concatMap (traces rtB) tests
+    in if (alphaA == alphaB) 
+          && all (inTrie (mkTrie tracesA :: TraceTrie)) tracesB
+    then True
+    else
+      traceShow (pretty "La comparacion ha fallado\n"
+                 <>prettyPrint (SentG (Compare (runtimeProc rtA) (runtimeProc rtB))))
+      traceShow (alphaA, alphaB)
+      traceShow (mkTrie tracesA :: TraceTrie)
+      traceShow tracesA
+      traceShow (mkTrie tracesB :: TraceTrie)
+      traceShow tracesB
+      False
+      --traceShow ("")

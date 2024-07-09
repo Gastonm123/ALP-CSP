@@ -30,6 +30,7 @@ dependencies:
 - random == 1.2.1.2
 - parallel == 3.2.2.0
 - containers == 0.6.8
+- transformers == 0.6.1.0
 
 ghc-options:
 - -Wall

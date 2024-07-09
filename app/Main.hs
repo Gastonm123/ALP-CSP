@@ -9,13 +9,16 @@ import           Interactive
 
 import           Prettyprinter -- Doc
 import           Prettyprinter.Render.Terminal  (AnsiStyle)
-import           PrettyPrint                    (prettyPrint)
+import           PrettyPrint                    (prettyPrint, render, errorStyle)
 
 import           System.Random                  (mkStdGen, initStdGen)
 import           System.Random.Stateful         (newSTGenM, FrozenGen (freezeGen))
 import           Control.Monad.ST               (stToIO)
 
 import           Prelude hiding (error)
+import           RuntimeProc (initRuntime, RuntimeProc(..))
+import           Data.List (findIndex)
+import           Data.Maybe
 ---------------------------------------------------------
 
 data Options = Options
@@ -23,12 +26,13 @@ data Options = Options
   , optAST   :: Bool
   , optSeed  :: Int
   , optHelp  :: Bool
+  , optCheck :: Bool
   }
   deriving Show
 
 defaultOptions :: Options
 defaultOptions =
-  Options { optPrint = False, optAST = False, optSeed = 0, optHelp = False } 
+  Options { optPrint = False, optAST = False, optSeed = 0, optHelp = False, optCheck = False }
 
 options :: [OptDescr (Options -> Options)]
 options =
@@ -48,6 +52,10 @@ options =
            ["help"]
            (NoArg (\opts -> opts { optHelp = True }))
            "Imprimir guia de uso."
+  , Option []
+           ["check"]
+           (NoArg (\opts -> opts { optCheck = True }))
+           "Validacion parcial de las condiciones de verificacion (VC)."
   ]
 
 finalOptions :: [String] -> IO (Options, [String])
@@ -75,11 +83,34 @@ runOptions fp opts
             let hangPrint :: Sentence -> Doc AnsiStyle
                 hangPrint p = hang 4 (prettyPrint (SentG p))
             print (vcat (map hangPrint prog))
-        | otherwise         -> do
+        | otherwise -> do
             gen <- if optSeed opts /= 0
                   then return (mkStdGen (optSeed opts))
                   else initStdGen
-            frozenRand <- stToIO $ do
-              erandom <- newSTGenM gen
-              freezeGen erandom
-            interactive frozenRand prog
+            case initRuntime gen prog of
+              Just constructRuntime -> if optCheck opts
+                then do
+                  let vcs = foldr (\sent l -> case sent of
+                                    (Compare p q) -> (constructRuntime p
+                                                     ,constructRuntime q) : l 
+                                    _ -> l) [] prog
+                  if all (uncurry (==)) vcs
+                    then print (pretty "Todas las condiciones de verificacion fueron validadas")
+                    else let 
+                      failure = fromJust (findIndex (uncurry (/=)) vcs)
+                    in do
+                      print (pretty "Alguna condicion fallo:")
+                      render (
+                        pretty "    "
+                        <> prettyPrint 
+                           (SentG (let (p, q) = vcs !! failure
+                                   in Compare (runtimeProc p) (runtimeProc q)))
+                        <> pretty "\n")
+                else do
+                  frozenRand <- stToIO $ do
+                    erandom <- newSTGenM gen
+                    freezeGen erandom
+                  interactive frozenRand prog
+              Nothing -> render (Prettyprinter.annotate errorStyle
+                (Prettyprinter.pretty "!! Error: Hay algun simbolo indefinido"
+                <> Prettyprinter.hardline))

@@ -10,14 +10,17 @@
 module Parser (
   file_parse,
   line_parse,
-  ParseResult (..)
+  ParseResult (..),
+  P(..)
 ) where
+import ParserDefinitions
+import ParserChannel
 import AST
 import Data.Char
 }
 
-%name parseDecls Declarations
-%name parseDecl Declaration
+%name parseDecls Sentences
+%name parseDecl Sentence
 
 %tokentype { Token }
 %error { parseError }
@@ -35,8 +38,8 @@ import Data.Char
   '|'        { TokenLabeledAlternative }
   '/\\'      { TokenInterrupt }
   ';'        { TokenSequential }
-  -- '?'        { TokenReceive }
-  -- '!'        { TokenSend }
+  '?'        { TokenReceive $$ }
+  '!'        { TokenSend $$ }
   ProcId     { TokenProcId $$ }
   Event      { TokenEvent $$ }
   '('        { TokenOpenBrack }
@@ -51,33 +54,41 @@ import Data.Char
 
 %%
 
-Declarations :: { [Sentence] }
-             : Declaration Declarations { $1 : $2 }
-             | Declaration              { [$1] }
+Sentences :: { [Sentence] }
+          : Sentence Sentences { $1 : $2 }
+          | Sentence              { [$1] }
 
-Declaration :: { Sentence }
-            : ProcId '=' Proc   { Assign $1 $3 }
-            | Proc '==' Proc    { Compare $1 $3 }
+Sentence :: { Sentence }
+         : ProcId '=' Proc   { Assign $1 $3 }
+         | Proc '==' Proc    { Compare $1 $3 }
 
 LabeledAlt :: { Proc }
-           : Event '->' Proc '|' LabeledAlt1      { ExternalChoice (Prefix $1 $3) $5 }
-           
-LabeledAlt1 :: { Proc }
-            : Event '->' Proc                     { Prefix $1 $3 }
-            | Event '->' Proc '|' LabeledAlt1     { ExternalChoice (Prefix $1 $3) $5 }
+           : LabeledAlt '|' LabeledAlt      { ExternalChoice $1 $3 }
+           | Prefix '->' Proc               { Prefix $1 $3 }
+
+Prefix :: { Prefix }
+       : Event '?'   {% (\s l -> case parseMsg $2 l of
+                           Ok expression -> case expression of 
+                                 Var v -> Ok (ChannelIn $1 v)
+                                 _ -> Failed $ "Linea "++(show l)++": El canal "++(show $1)++(show $2)++" no esta bien definido"
+                           Failed err -> Failed err) }
+       | Event '!'   {% (\s l -> case parseMsg $2 l of
+                           Ok expression -> Ok $ ChannelOut $1 expression
+                           Failed err -> Failed err) }
+       | Event       { Event $1 }
 
 Proc :: { Proc }
-     : LabeledAlt               { $1 }
-     | Event '->' Proc          { Prefix $1 $3 }
-     | Proc '[]' Proc           { ExternalChoice $1 $3 }
-     | Proc '|~|' Proc          { InternalChoice $1 $3 }
-     | Proc '/\\' Proc          { Interrupt $1 $3 }
-     | Proc ';' Proc            { Sequential $1 $3 }
-     | Proc '||' Proc           { Parallel $1 $3 }
-     | STOP                     { Stop }
-     | SKIP                     { Skip }
-     | ProcId                   { ByName $1 }
-     | '(' Proc ')'             { $2 }
+     : Prefix '->' Proc           { Prefix $1 $3 }
+     | LabeledAlt '|' LabeledAlt  { ExternalChoice $1 $3 }
+     | Proc '[]' Proc             { ExternalChoice $1 $3 }
+     | Proc '|~|' Proc            { InternalChoice $1 $3 }
+     | Proc '/\\' Proc            { Interrupt $1 $3 }
+     | Proc ';' Proc              { Sequential $1 $3 }
+     | Proc '||' Proc             { Parallel $1 $3 }
+     | STOP                       { Stop }
+     | SKIP                       { Skip }
+     | ProcId                     { ByName $1 }
+     | '(' Proc ')'               { $2 }
 
 {
 
@@ -89,8 +100,8 @@ data Token
   | TokenInternalChoice
   | TokenParallel
   | TokenInterrupt
-  | TokenReceive
-  | TokenSend
+  | TokenReceive String
+  | TokenSend String
   | TokenProcId String
   | TokenEvent String
   | TokenSequential
@@ -102,33 +113,7 @@ data Token
   | TokenCompare
   deriving (Eq, Show)
 
-data ParseResult a = Ok a | Failed String deriving Show
-type LineNumber = Int
-type P a = String -> LineNumber -> ParseResult a
-
-thenP :: P a -> (a -> P b) -> P b
-m `thenP` k = \s l ->
-   case m s l of
-       Ok a     -> k a s l
-       Failed e -> Failed e
-
-returnP :: a -> P a
-returnP a = \s l -> Ok a
-
-failP :: String -> P a
-failP err = \s l -> Failed err
-
-catchP :: P a -> (String -> P a) -> P a
-catchP m k = \s l ->
-   case m s l of
-      Ok a     -> Ok a
-      Failed e -> k e s l
-
-
-
-parseError :: Token -> P a
-parseError  tok s i = Failed $ "Linea "++(show i)++": Error de parseo en el token "++(show tok)
-
+lexer :: (Token -> P a) -> P a
 lexer cont s = case s of
                     [] -> cont TokenEOF []
                     ('\n':s)  ->  \line -> lexer cont s (line + 1)
@@ -149,13 +134,17 @@ lexer cont s = case s of
                     (';':cs) -> cont TokenSequential cs
                     ('=':('=':cs)) -> cont TokenCompare cs
                     ('=':cs) -> cont TokenEquals cs
+                    ('!':cs) -> let (msg, rest) = break (\c -> c == ' ' || c == '\n') cs
+                                in cont (TokenSend ('!':msg)) rest 
+                    ('?':cs) -> let (msg, rest) = break (\c -> c == ' ' || c == '\n') cs
+                                in cont (TokenReceive ('?':msg)) rest
                     unknown -> \line -> Failed $ 
                      "Linea "++(show line)++": No se puede reconocer "++(show $ take 10 unknown)++ "..."
                     where lexAlpha cs = case span isAlphaNum cs of
                               ("STOP", rest) -> cont TokenStop rest
                               ("SKIP", rest) -> cont TokenSkip rest
                               (name, rest)
-                                         | isLower (head name) 
+                                         | isLower (head name)
                                             && all ((||) <$> isLower <*> isNumber) name -> cont (TokenEvent name) rest
                                          | isUpper (head name)
                                             && all ((||) <$> isUpper <*> isNumber) name -> cont (TokenProcId name) rest
@@ -168,7 +157,7 @@ lexer cont s = case s of
                                                   _ -> consumirBK (anidado-1) cl cont cs
                               ('\n':cs) -> consumirBK anidado (cl+1) cont cs
                               (_:cs) -> consumirBK anidado cl cont cs     
-                          
+
 file_parse s = parseDecls s 1
 line_parse s = parseDecl s 1
 }
