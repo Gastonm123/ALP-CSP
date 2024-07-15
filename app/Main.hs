@@ -16,8 +16,8 @@ import           System.Random.Stateful         (newSTGenM, FrozenGen (freezeGen
 import           Control.Monad.ST               (stToIO)
 
 import           Prelude hiding (error)
-import           RuntimeProc (initRuntime, RuntimeProc(..))
-import           Data.List (findIndex)
+import           RuntimeProc (initRuntime, compareProcs)
+import           Data.List (find)
 import           Data.Maybe
 ---------------------------------------------------------
 
@@ -92,20 +92,15 @@ runOptions fp opts
                 then do
                   let vcs = foldr (\sent l -> case sent of
                                     (Compare p q) -> (constructRuntime p
-                                                     ,constructRuntime q) : l 
+                                                     ,constructRuntime q) : l
                                     _ -> l) [] prog
-                  if all (uncurry (==)) vcs
+                  let verify = uncurry compareProcs <$> vcs
+                  let verificationPositive = all fst verify
+                  if verificationPositive
                     then print (pretty "Todas las condiciones de verificacion fueron validadas")
-                    else let 
-                      failure = fromJust (findIndex (uncurry (/=)) vcs)
-                    in do
-                      print (pretty "Alguna condicion fallo:")
-                      render (
-                        pretty "    "
-                        <> prettyPrint 
-                           (SentG (let (p, q) = vcs !! failure
-                                   in Compare (runtimeProc p) (runtimeProc q)))
-                        <> pretty "\n")
+                    else
+                      let failure = fromJust (find (not . fst) verify) in
+                        render (snd failure)
                 else do
                   frozenRand <- stToIO $ do
                     erandom <- newSTGenM gen

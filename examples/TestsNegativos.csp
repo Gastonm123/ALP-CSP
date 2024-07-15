@@ -1,7 +1,14 @@
--- El objetivo es probar cosas que ciertamente no deberian
--- ser iguales
 
 P = p -> P
 Q = q -> Q
 
-P == Q
+P /= Q
+
+-- La eleccion no determinista no es distributiva respecto del
+-- operador de recursion (no implementado, pero es igual a una
+-- definicion recursiva). Mientras PQ puede elegir en cada paso
+-- entre aceptar p o q, P |~| Q tiene que elegir "al inicio"
+-- entre aceptar siempre p o siempre q.
+PQ = p -> PQ |~| q -> PQ
+
+P |~| Q /= PQ

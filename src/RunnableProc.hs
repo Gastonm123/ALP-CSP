@@ -24,4 +24,8 @@ class RunnableProc a where
   asProc :: a -> ProcRep a
   fromProc :: ProcRep a -> a
   findProc :: a -> ProcId -> a
+  showProc :: a -> String
+  
+  -- in case deterministic check is required
+  accept' :: a -> Event -> Bool
 

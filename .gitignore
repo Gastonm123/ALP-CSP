@@ -2,4 +2,5 @@
 .vscode
 stack.yaml.lock
 CSP-stack.cabal
+informe
 *~

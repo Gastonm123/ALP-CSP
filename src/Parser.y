@@ -70,7 +70,10 @@ Prefix :: { Prefix }
        : Event '?'   {% (\s l -> case parseMsg $2 l of
                            Ok expression -> case expression of 
                                  Var v -> Ok (ChannelIn $1 v)
-                                 _ -> Failed $ "Linea "++(show l)++": El canal "++(show $1)++(show $2)++" no esta bien definido"
+                                 _ -> Failed $ 
+                                      "Linea "++(show l)
+                                      ++": El canal "++(show $1)++(show $2)
+                                      ++" no esta bien definido"
                            Failed err -> Failed err) }
        | Event '!'   {% (\s l -> case parseMsg $2 l of
                            Ok expression -> Ok $ ChannelOut $1 expression

@@ -6,20 +6,30 @@
 module RuntimeProc (
   initRuntime,
   RuntimeProc(..),
-  compare
+  compareProcs
 )where
 
-import AST ( Proc(..), ProcId, Sentence(..), Event, Prefix (Event), Generic (SentG) )
+import AST
+    ( Proc(..),
+      ProcId,
+      Sentence(..),
+      Event,
+      Prefix(Event),
+      Generic(..) )
 import RunnableProc (RunnableProc (..), ProcRep (..))
-import Traces ( traces, generateEvents, Trie (inTrie, mkTrie), TraceTrie )
+import Traces ( traces, generateRandomEvents, Trie (inTrie, mkTrie), TraceTrie, Trace (Trace, unTrace) )
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 import System.Random (StdGen, RandomGen (genWord8))
 import Control.Parallel (par)
-import Data.Foldable (Foldable(foldl'))
-import Debug.Trace (traceShow)
 import PrettyPrint (prettyPrint)
-import Data.Text.Prettyprint.Doc (Pretty(pretty))
+import Prettyprinter (Pretty(pretty), Doc, line, emptyDoc, vsep)
+import Control.Monad.Trans.Accum (runAccum)
+import Control.Monad.Accum (MonadAccum (add))
+import Prettyprinter.Render.Terminal (AnsiStyle)
+import Data.List ( foldl', find )
+import Data.Maybe
+
 
 type Defines = Map.Map ProcId Proc
 type AlphaSymbols = Map.Map ProcId [Event]
@@ -87,23 +97,12 @@ initRuntime randomGen prog =
       , runtimeProc = p }
     in Just constructRuntime
 
-{- Data.Tuple.Extra define estas funciones pero no merece agregar una dependencia -}
-fst3 :: (a, b, c) -> a
-fst3 (a, _, _) = a
-snd3 :: (a, b, c) -> b
-snd3 (_, b, _) = b
-thd3 :: (a, b, c) -> c
-thd3 (_, _, c) = c
-
-infixl 5 <|> -- operador para combinar run'
-(<|>) :: (a, b, Bool) -> (c, d, Bool) -> (a, b, Bool)
-(<|>) (a, b, c) (_, _, d) = (a, b, c || d)
 
 
 instance RunnableProc RuntimeProc where
-  run rt ev = fst3 (run' rt ev)
-  accept rt ev = not (refusal rt ev)
-  refusal rt ev = snd3 (run' rt ev)
+  run rt ev = fst3 (evalEvent rt ev NonDeterministic)
+  accept rt ev = snd3 (evalEvent rt ev NonDeterministic)
+  refusal rt ev = not (accept rt ev)
 
   getAlpha rt = alpha (definitions rt) Set.empty (runtimeProc rt)
 
@@ -119,7 +118,7 @@ instance RunnableProc RuntimeProc where
                           inAlpha (rt {runtimeProc = q}) ev
       (Interrupt p q) -> inAlpha (rt {runtimeProc = p}) ev ||
                         inAlpha (rt {runtimeProc = q}) ev
-      (Prefix pref p) -> let (Event procEv) = pref in 
+      (Prefix pref p) -> let (Event procEv) = pref in
                          procEv == ev || inAlpha (rt {runtimeProc = p}) ev
       (ByName p) -> case Map.lookup p (alphaSymbols rt) of
         Just alphaP -> ev `elem` alphaP
@@ -154,85 +153,153 @@ instance RunnableProc RuntimeProc where
   fromProc (SequentialRep p q) = p {runtimeProc = Sequential (runtimeProc p) (runtimeProc q)}
   fromProc (PrefixRep pref p) = p {runtimeProc = Prefix (Event pref) (runtimeProc p)}
   fromProc _ = error "Evaluation error: Trying to get environment from unexpected process representation"
+  showProc p = show (runtimeProc p)
 
+  accept' rt ev = snd3 (evalEvent rt ev Deterministic)
 
+{- Data.Tuple.Extra define estas funciones pero no merece agregar una dependencia -}
+fst3 :: (a, b, c) -> a
+fst3 (a, _, _) = a
+snd3 :: (a, b, c) -> b
+snd3 (_, b, _) = b
+thd3 :: (a, b, c) -> c
+thd3 (_, _, c) = c
+
+infixl 5 <|> -- operador para combinar evalEvent
+(<|>) :: (a, b, Bool) -> (c, d, Bool) -> (a, b, Bool)
+(<|>) (a, b, c) (_, _, d) = (a, b, c || d)
+
+data Deterministic = NonDeterministic | Deterministic deriving Eq
 
 {- Ya que recorremos el arbol, vamos a sacar toda la informacion posible -}
 {- Returns: (run rt ev, accept rt ev, inAlpha rt ev) -}
-run' :: RuntimeProc -> Event -> (RuntimeProc, Bool, Bool)
-run' rt ev =
-  case runtimeProc rt of
-    (ExternalChoice q r) ->
-      let q' = run' (rt {runtimeProc = q}) ev
-          r' = run' (rt {runtimeProc = r}) ev
-      in if
-      | snd3 q' -> q' <|> r'
-      | snd3 r' -> r' <|> q'
-      | otherwise -> (rt, False, False) <|> q' <|> r'
-    (InternalChoice q r) ->
-      let (internal, gen') =  genWord8 $ runtimeRandom rt
-          q' = run' (rt {runtimeProc = q, runtimeRandom = gen'}) ev
-          r' = run' (rt {runtimeProc = r, runtimeRandom = gen'}) ev
-      in if
-      | even internal && snd3 q' -> q' <|> r'
-      | odd internal && snd3 r' -> r' <|> q'
-      | otherwise -> (rt, False, False) <|> q' <|> r'
-    (Parallel q r) ->
-      let q' = run' (rt {runtimeProc = q}) ev
-          r' = run' (rt {runtimeProc = r}) ev
-      in if
-      | snd3 q' && snd3 r' -> (rt {
-            runtimeProc = Parallel (runtimeProc $ fst3 q') (runtimeProc $ fst3 r')}, True, True)
-      | snd3 q' && not (thd3 r') -> (rt {
-            runtimeProc = Parallel (runtimeProc $ fst3 q') r}, True, True)
-      | snd3 r' && not (thd3 q') -> (rt {
-            runtimeProc = Parallel q (runtimeProc $ fst3 r')}, True, True)
-      | otherwise -> (rt, False, False) <|> q' <|> r'
-    (Sequential q r) ->
-      let q' = run' (rt {runtimeProc = q}) ev
-          r' = run' (rt {runtimeProc = r}) ev
-      in case q of
-        Stop -> (rt {runtimeProc = Stop}, False, False)
-        Skip -> r'
-        _ -> ((fst3 q') {runtimeProc = Sequential (runtimeProc $ fst3 q') r}
-              , snd3 q', thd3 q') <|> r'
-    (Interrupt q r) ->
-      let q' = run' (rt {runtimeProc = q}) ev
-          r' = run' (rt {runtimeProc = r}) ev
-      in if
-      | snd3 r' -> r' <|> q'
-      | snd3 q' -> ((fst3 q') {runtimeProc = Interrupt (runtimeProc $ fst3 q') r}, True, True)
-      | otherwise -> (rt, False, False) <|> q' <|> r'
-    (Prefix pref q) -> let (Event procEv) = pref in 
-        if procEv == ev
-        then (rt {runtimeProc = q}, True, True)
-        else (rt, False, inAlpha (rt {runtimeProc = q}) ev)
-    (ByName p) -> case Map.lookup p (definitions rt) of
-        Just definition -> run' (rt {runtimeProc = definition}) ev
-        Nothing -> error "Evaluation error: Current process has an undefined process ( " ++ p ++ " )" `seq` (rt, False, False)
-    Stop -> (rt, False, False)
-    Skip -> (rt, False, False)
+evalEvent :: RuntimeProc -> Event -> Deterministic -> (RuntimeProc, Bool, Bool)
+evalEvent rt_ ev_ deterministic = eval rt_ ev_
+  where
+  eval rt ev =
+    case runtimeProc rt of
+      (ExternalChoice q r) ->
+        let q' = eval (rt {runtimeProc = q}) ev
+            r' = eval (rt {runtimeProc = r}) ev
+        in if
+        | snd3 q' -> q' <|> r'
+        | snd3 r' -> r' <|> q'
+        | otherwise -> (rt, False, False) <|> q' <|> r'
+      (InternalChoice q r) -> case deterministic of
+          NonDeterministic ->
+                let (internalChoice, gen') =  genWord8 $ runtimeRandom rt
+                    q' = eval (rt {runtimeProc = q, runtimeRandom = gen'}) ev
+                    r' = eval (rt {runtimeProc = r, runtimeRandom = gen'}) ev
+                in if
+                | even internalChoice && snd3 q' -> q' <|> r'
+                | odd internalChoice && snd3 r' -> r' <|> q'
+                | otherwise -> (rt, False, False) <|> q' <|> r'
+          Deterministic ->
+                let q' = eval (rt {runtimeProc = q}) ev
+                    r' = eval (rt {runtimeProc = r}) ev
+                in if
+                | snd3 q' -> q' <|> r'
+                | snd3 r' -> r' <|> q'
+                | otherwise -> (rt, False, False) <|> q' <|> r'
+      (Parallel q r) ->
+        let q' = eval (rt {runtimeProc = q}) ev
+            r' = eval (rt {runtimeProc = r}) ev
+        in if
+        | snd3 q' && snd3 r' -> (rt {
+              runtimeProc = Parallel (runtimeProc $ fst3 q') (runtimeProc $ fst3 r')}, True, True)
+        | snd3 q' && not (thd3 r') -> (rt {
+              runtimeProc = Parallel (runtimeProc $ fst3 q') r}, True, True)
+        | snd3 r' && not (thd3 q') -> (rt {
+              runtimeProc = Parallel q (runtimeProc $ fst3 r')}, True, True)
+        | otherwise -> (rt, False, False) <|> q' <|> r'
+      (Sequential q r) ->
+        let q' = eval (rt {runtimeProc = q}) ev
+            r' = eval (rt {runtimeProc = r}) ev
+        in case q of
+          Stop -> (rt {runtimeProc = Stop}, False, False)
+          Skip -> r'
+          _ -> ((fst3 q') {runtimeProc = Sequential (runtimeProc $ fst3 q') r}
+                , snd3 q', thd3 q') <|> r'
+      (Interrupt q r) ->
+        let q' = eval (rt {runtimeProc = q}) ev
+            r' = eval (rt {runtimeProc = r}) ev
+        in if
+        | snd3 r' -> r' <|> q'
+        | snd3 q' -> ((fst3 q') {runtimeProc = Interrupt (runtimeProc $ fst3 q') r}, True, True)
+        | otherwise -> (rt, False, False) <|> q' <|> r'
+      (Prefix pref q) -> let (Event procEv) = pref in
+          if procEv == ev
+          then (rt {runtimeProc = q}, True, True)
+          else (rt, False, inAlpha (rt {runtimeProc = q}) ev)
+      (ByName p) -> case Map.lookup p (definitions rt) of
+          Just definition -> eval (rt {runtimeProc = definition}) ev
+          Nothing -> error "Evaluation error: Current process has an undefined process ( " ++ p ++ " )" `seq` (rt, False, False)
+      Stop -> (rt, False, False)
+      Skip -> (rt, False, False)
 
-
-instance Eq RuntimeProc where
-  (==) rtA rtB =
-    let
-      randomGen = runtimeRandom rtA
-      alphaA = Set.fromList (getAlpha rtA)
-      alphaB = Set.fromList (getAlpha rtB)
-      tests = generateEvents rtA randomGen
-      tracesA = concatMap (traces rtA) tests
-      tracesB = concatMap (traces rtB) tests
-    in if (alphaA == alphaB) 
-          && all (inTrie (mkTrie tracesA :: TraceTrie)) tracesB
-    then True
-    else
-      traceShow (pretty "La comparacion ha fallado\n"
-                 <>prettyPrint (SentG (Compare (runtimeProc rtA) (runtimeProc rtB))))
-      traceShow (alphaA, alphaB)
-      traceShow (mkTrie tracesA :: TraceTrie)
-      traceShow tracesA
-      traceShow (mkTrie tracesB :: TraceTrie)
-      traceShow tracesB
-      False
-      --traceShow ("")
+compareProcs :: RuntimeProc -> RuntimeProc -> (Bool, Doc AnsiStyle)
+compareProcs rtA rtB = runAccum compareM emptyDoc
+  where
+    compareM =
+      let
+        randomGen = runtimeRandom rtA
+        alphaA = Set.fromList (getAlpha rtA)
+        alphaB = Set.fromList (getAlpha rtB)
+        tests = generateRandomEvents rtA randomGen
+        tracesA = concatMap (traces rtA) tests
+        tracesB = concatMap (traces rtB) tests
+        trieA = mkTrie tracesA :: TraceTrie
+        trieB = mkTrie tracesB :: TraceTrie
+      in if (alphaA == alphaB)
+            && all (inTrie trieA) tracesB
+      then return True
+      else do
+        add (pretty "Una comparacion ha fallado\n"
+                  <>pretty "    "
+                  <>prettyPrint (SentG (Compare (runtimeProc rtA) (runtimeProc rtB)))
+                  <>line)
+        if alphaA /= alphaB then do
+          add (pretty "Alfabeto del lado izquierdo: "
+                    <> pretty (commaSeparated alphaA)
+                    <> line)
+          add (pretty "Alfabeto del lado derecho: "
+                    <> pretty (commaSeparated alphaB)
+                    <> line)
+        else do
+        -- add (pretty tests <> line)
+        -- add ((pretty . show) (mkTrie tracesA :: TraceTrie) <> line)
+        -- add ((pretty . show) tracesA <> line)
+        -- add ((pretty . show) (mkTrie tracesB :: TraceTrie) <> line)
+        -- add ((pretty . show) tracesB <> line)
+          let failure = fromJust (find (not . inTrie trieA) tracesB)
+          add (pretty "Traza fallida: "
+                    <> pretty (let (Trace failureEvents) = failure
+                               in commaSeparated failureEvents)
+                    <> line)
+          add (pretty "Trazas validas del lado izquierdo:\n"
+                    <> pretty trieA
+                    <> line)
+          add (pretty "Trazas validas del lado derecho:\n"
+                    <> pretty trieB
+                    <> line)
+          add (pretty "Casos de prueba:\n"
+                      <> vsep (map
+                              (\t -> let
+                                    trA = traces rtA t
+                                    trB = traces rtB t
+                                    in
+                                    pretty "Test:"
+                                    <> pretty (commaSeparated t)
+                                    <> line
+                                    <> pretty "Lado izquierdo:\n"
+                                    <> vsep (map (pretty . commaSeparated . unTrace) trA)
+                                    <> line
+                                    <> pretty "Lado derecho:\n"
+                                    <> vsep (map (pretty . commaSeparated . unTrace) trB)
+                                    <> line)
+                              tests))
+        return False
+    commaSeparated :: Foldable t => t String -> String
+    commaSeparated = foldr
+                     (\x acc -> if acc /= "" then x <> ", " <> acc else x)
+                     ""
