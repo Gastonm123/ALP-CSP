@@ -34,13 +34,13 @@ module Eval (
 import AST
     ( Sentence(Assign),
       Proc(Skip, InternalChoice, ExternalChoice, Parallel, Sequential,
-           Prefix, Interrupt, ByName, Stop),
+           Prefix, Interrupt, ByName, Stop, LabeledAlt),
       Event,
-      ProcId, Prefix (Event) )
+      ProcId )
 import Control.Monad ( foldM, forM_ )
 import Control.Monad.ST ( ST )
 import qualified Data.HashTable.ST.Basic as H
-import System.Random.Stateful (StdGen, STGen (unSTGen), RandomGen (genWord8))
+import System.Random.Stateful (StdGen, STGen, RandomGen (genWord8))
 
 hashtableSize :: Int
 hashtableSize = 50
@@ -121,12 +121,10 @@ evalProc defines random p =
       wrapResult
         <$> runExternalChoice defines random q r
         <*> refusalExternalChoice defines random q r
-    (Prefix pref q) -> let
-        (Event ev) = pref
-      in return $
+    (Prefix pref q) -> return $
         wrapResult
-          (runPrefix ev q)
-          (refusalPrefix ev q)
+          (runPrefix pref q)
+          (refusalPrefix pref q)
     (Parallel q r) ->
       wrapResult
         <$> runParallel defines random q r
@@ -156,6 +154,10 @@ evalProc defines random p =
               (refusal q')
     (Stop) -> return ignore
     (Skip) -> return ignore -- No contamos el evento interno "/"
+    (LabeledAlt q r) ->
+      wrapResult
+        <$> runExternalChoice defines random q r
+        <*> refusalExternalChoice defines random q r
     (Interrupt q r) ->
       wrapResult
         <$> runInterrupt defines random q r
@@ -362,7 +364,7 @@ runPrefix pref q =
       runPref ev =
         if ev == pref
           then q
-          else Prefix (Event pref) q
+          else Prefix pref q
    in runPref
 
 refusalPrefix :: Event -> Proc -> Refusal
@@ -424,11 +426,11 @@ alpha' ns seen (ExternalChoice p q) = (++) <$> alpha' ns seen p <*> alpha' ns se
 alpha' ns seen (Parallel p q) = (++) <$> alpha' ns seen p <*> alpha' ns seen q
 alpha' ns seen (Interrupt p q) = (++) <$> alpha' ns seen p <*> alpha' ns seen q
 alpha' ns seen (Sequential p q) = (++) <$> alpha' ns seen p <*> alpha' ns seen q
+alpha' ns seen (LabeledAlt p q) = (++) <$> alpha' ns seen p <*> alpha' ns seen q
 alpha' ns seen (Prefix pref q) = do
   --- caso interesante
   events <- alpha' ns seen q
-  let (Event ev) = pref
-  return (ev : events)
+  return (pref : events)
 alpha' ns seen (ByName p) = do
   is_seen <- H.lookup seen p
   case is_seen of

@@ -6,12 +6,12 @@
 {-# HLINT ignore "Eta reduce" #-}
 {-# LANGUAGE InstanceSigs #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-module Traces (
+module Compare (
   traces,
   Trace(..),
-  TraceTrie(..),
-  Trie(..),
-  generateRandomEvents
+  generateRandomEvents,
+  compareProcs,
+  compareProcs1
 ) where
 
 import RunnableProc
@@ -23,6 +23,13 @@ import System.Random (RandomGen, Random (randoms))
 import Control.Monad.State.Strict (evalState, MonadState (state))
 import Control.Monad (replicateM)
 import Prettyprinter.Internal (Pretty(..), align, vsep, (<+>))
+import qualified Data.Set as Set
+import Prettyprinter.Render.Terminal (AnsiStyle)
+import Prettyprinter (Pretty(pretty), Doc, line, emptyDoc, vsep)
+import Control.Monad.Trans.Accum (runAccum)
+import Control.Monad.Accum (MonadAccum (add))
+import Data.Maybe
+import Data.List
 
 newtype Trace = Trace { unTrace :: [Event] } deriving (Show, Eq)
 
@@ -62,6 +69,18 @@ expandOne p_ ev = expand_ p_
             [internalChoice impQ impR | impQ <- expandQ, impR <- expandR] -- iteramos por todas las "implementaciones" de P/ev y Q/ev
                                                                           -- idea de R. Hoare
             ++ expandQ ++ expandR -- las implementaciones de P |~| Q incluyen el "nodeterminismo angelico", P o Q
+        (LabeledAltRep q r) -> let
+            expandQ = expand_ q
+            expandR = expand_ r
+            externalChoice (altQ, acceptQ) (altR, acceptR) =
+              if
+              | acceptQ && acceptR -> (fromProc (ExternalChoiceRep altQ altR), True)
+              | acceptR -> (altR, acceptR)
+              | acceptQ -> (altQ, acceptQ)
+              | otherwise -> reject
+          in
+            [externalChoice impQ impR | impQ <- expandQ, impR <- expandR] -- iteramos por todas las "implementaciones" de P/ev y Q/ev
+                                                                          -- idea de R. Hoare
         (PrefixRep pref q) -> if ev == pref then [(q, True)] else [reject]
         (ParallelRep q r) -> let
             expandQ = expand_ q
@@ -162,3 +181,134 @@ generateRandomEvents rt randomGen = let
     (state (splitAt (lenAlpha * multiplier defaultTest))))
     (randoms randomGen)
   in (map (\i -> (alpha `Seq.index` (i `mod` lenAlpha))) <$> indices)
+
+compareProcs1 :: (RunnableProc a) => a -> a -> [Event] -> (Bool, Doc AnsiStyle)
+compareProcs1 rtA rtB evs = runAccum compareM emptyDoc
+  where
+    compareM =
+      let
+        alphaA = Set.fromList (getAlpha rtA)
+        alphaB = Set.fromList (getAlpha rtB)
+        tracesA = traces rtA evs
+        tracesB = traces rtB evs
+        trieA = mkTrie tracesA :: TraceTrie
+        trieB = mkTrie tracesB :: TraceTrie
+      in if (alphaA == alphaB)
+            && all (inTrie trieA) tracesB
+      then return True
+      else do
+        add (pretty "Una comparacion ha fallado\n"
+                  <>pretty "    "
+                  <>pretty (showProc rtA) <+> pretty"==" <+> pretty (showProc rtB)
+                  <>line)
+        if alphaA /= alphaB then do
+          add (pretty "Alfabeto del lado izquierdo: "
+                    <> pretty (commaSeparated alphaA)
+                    <> line)
+          add (pretty "Alfabeto del lado derecho: "
+                    <> pretty (commaSeparated alphaB)
+                    <> line)
+        else do
+        -- add (pretty tests <> line)
+        -- add ((pretty . show) (mkTrie tracesA :: TraceTrie) <> line)
+        -- add ((pretty . show) tracesA <> line)
+        -- add ((pretty . show) (mkTrie tracesB :: TraceTrie) <> line)
+        -- add ((pretty . show) tracesB <> line)
+          let failure = fromJust (find (not . inTrie trieA) tracesB)
+          add (pretty "Traza fallida: "
+                    <> pretty (let (Trace failureEvents) = failure
+                               in commaSeparated failureEvents)
+                    <> line)
+          add (pretty "Trazas validas del lado izquierdo:\n"
+                    <> pretty trieA
+                    <> line)
+          add (pretty "Trazas validas del lado derecho:\n"
+                    <> pretty trieB
+                    <> line)
+          add (pretty "Caso de prueba:\n"
+                      <> vsep (map
+                              (\t -> let
+                                    trA = traces rtA t
+                                    trB = traces rtB t
+                                    in
+                                    pretty "Test:"
+                                    <> pretty (commaSeparated t)
+                                    <> line
+                                    <> pretty "Lado izquierdo:\n"
+                                    <> vsep (map (pretty . commaSeparated . unTrace) trA)
+                                    <> line
+                                    <> pretty "Lado derecho:\n"
+                                    <> vsep (map (pretty . commaSeparated . unTrace) trB)
+                                    <> line)
+                              [evs]))
+        return False
+    commaSeparated :: Foldable t => t String -> String
+    commaSeparated = foldr
+                     (\x acc -> if acc /= "" then x <> ", " <> acc else x)
+                     ""
+
+compareProcs :: (RunnableProc a, RandomGen g) => a -> a -> g -> (Bool, Doc AnsiStyle)
+compareProcs rtA rtB randomGen = runAccum compareM emptyDoc
+  where
+    compareM =
+      let
+        alphaA = Set.fromList (getAlpha rtA)
+        alphaB = Set.fromList (getAlpha rtB)
+        tests = generateRandomEvents rtA randomGen
+        tracesA = concatMap (traces rtA) tests
+        tracesB = concatMap (traces rtB) tests
+        trieA = mkTrie tracesA :: TraceTrie
+        trieB = mkTrie tracesB :: TraceTrie
+      in if (alphaA == alphaB)
+            && all (inTrie trieA) tracesB
+      then return True
+      else do
+        add (pretty "Una comparacion ha fallado\n"
+                  <>pretty "    "
+                  <>pretty (showProc rtA) <+> pretty"==" <+> pretty (showProc rtB)
+                  <>line)
+        if alphaA /= alphaB then do
+          add (pretty "Alfabeto del lado izquierdo: "
+                    <> pretty (commaSeparated alphaA)
+                    <> line)
+          add (pretty "Alfabeto del lado derecho: "
+                    <> pretty (commaSeparated alphaB)
+                    <> line)
+        else do
+        -- add (pretty tests <> line)
+        -- add ((pretty . show) (mkTrie tracesA :: TraceTrie) <> line)
+        -- add ((pretty . show) tracesA <> line)
+        -- add ((pretty . show) (mkTrie tracesB :: TraceTrie) <> line)
+        -- add ((pretty . show) tracesB <> line)
+          let failure = fromJust (find (not . inTrie trieA) tracesB)
+          add (pretty "Traza fallida: "
+                    <> pretty (let (Trace failureEvents) = failure
+                               in commaSeparated failureEvents)
+                    <> line)
+          add (pretty "Trazas validas del lado izquierdo:\n"
+                    <> pretty trieA
+                    <> line)
+          add (pretty "Trazas validas del lado derecho:\n"
+                    <> pretty trieB
+                    <> line)
+          add (pretty "Casos de prueba:\n"
+                      <> vsep (map
+                              (\t -> let
+                                    trA = traces rtA t
+                                    trB = traces rtB t
+                                    in
+                                    pretty "Test:"
+                                    <> pretty (commaSeparated t)
+                                    <> line
+                                    <> pretty "Lado izquierdo:\n"
+                                    <> vsep (map (pretty . commaSeparated . unTrace) trA)
+                                    <> line
+                                    <> pretty "Lado derecho:\n"
+                                    <> vsep (map (pretty . commaSeparated . unTrace) trB)
+                                    <> line)
+                              tests))
+        return False
+    commaSeparated :: Foldable t => t String -> String
+    commaSeparated = foldr
+                     (\x acc -> if acc /= "" then x <> ", " <> acc else x)
+                     ""

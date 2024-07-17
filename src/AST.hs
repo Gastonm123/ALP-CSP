@@ -16,7 +16,6 @@ module AST (
   Proc (..),
   Sentence (..),
   Generic (..),
-  Prefix (..),
   Expression (..))
 where
 
@@ -25,7 +24,6 @@ type ProcId = String -- a:String { uppercase a }
 
 type Event = String -- a:String { lowercase a }
 
-type ChannelName = String
 type Variable = String
 
 data Expression
@@ -41,10 +39,10 @@ data Expression
 data Proc where
   InternalChoice :: Proc -> Proc -> Proc
   ExternalChoice :: Proc -> Proc -> Proc
+  LabeledAlt :: Proc -> Proc -> Proc
   Parallel :: Proc -> Proc -> Proc
   Sequential :: Proc -> Proc -> Proc
-  Prefix :: Prefix -> Proc -> Proc
-  -- Prefix :: Event -> Proc -> Proc
+  Prefix :: Event -> Proc -> Proc
   Interrupt :: Proc -> Proc -> Proc
   ByName :: ProcId -> Proc
   Stop :: Proc
@@ -56,14 +54,10 @@ deriving instance Eq Proc
 -- Sentencias
 data Sentence
   = Assign ProcId Proc
-  | Compare Proc Proc
+  | Eq Proc Proc
+  | NEq Proc Proc
+  | NEqStar Proc Proc
   deriving (Show, Eq)
 
 -- Generic container
 data Generic = SentG Sentence | ProcG Proc | Error String deriving Show -- similar a un OR
-
-data Prefix
-  = ChannelIn ChannelName Variable
-  | ChannelOut ChannelName Expression
-  | Event Event
-  deriving (Show, Eq)

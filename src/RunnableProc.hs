@@ -7,6 +7,7 @@ import AST ( Event, ProcId )
 data ProcRep a
   = ExternalChoiceRep a a
   | InternalChoiceRep a a
+  | LabeledAltRep a a
   | PrefixRep Event a
   | ParallelRep a a
   | InterruptRep a a

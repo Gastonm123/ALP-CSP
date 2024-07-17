@@ -35,8 +35,15 @@ import Control.Parallel (par)
 import AST
     ( Proc(Skip, ByName, ExternalChoice, InternalChoice, Parallel,
            Sequential, Prefix, Interrupt, Stop),
-      Sentence(Compare, Assign),
+      Sentence(Eq, NEq, NEqStar, Assign),
       Event )
+
+import RuntimeProc (RuntimeProc(..), initRuntime)
+import RunnableProc (RunnableProc(..))
+import Compare (compareProcs1)
+import Control.Monad.Trans.State.Lazy
+import System.Random.Stateful (STGen(..))
+import qualified Data.Map as Map
 
 {- Traverses the program looking for undefined symbols
  - Arguments:
@@ -44,7 +51,7 @@ import AST
  - Returns:
  -    z: true if there is some symbol undefined
  -}
-somethingUndefined :: Prog -> Bool
+{-somethingUndefined :: Prog -> Bool
 somethingUndefined prog = let
   defines = map (\case
                     (Assign id _) -> id
@@ -60,12 +67,14 @@ somethingUndefined prog = let
   isDefined  (Stop) = True
   isDefined  (Skip) = True
   isDefined' (Assign _ p) = isDefined p
-  isDefined' (Compare p q) = bothDefined p q
+  isDefined' (Eq p q) = bothDefined p q
+  isDefined' (NEq p q) = bothDefined p q
+  isDefined' (NEqStar p q) = bothDefined p q
 
   bothDefined p q = isDefined p `par` isDefined q `par` (isDefined p && isDefined q)
 
   in
-    not (all isDefined' prog)
+    not (all isDefined' prog) -}
 
 {- Arguments:
  -   erandom: random number generator from system entropy or user-provided seed
@@ -74,12 +83,25 @@ somethingUndefined prog = let
  -   io: input-output thread with stateful computations
  -}
 interactive :: EvalRandom -> Prog -> IO ()
-interactive erandom prog = 
-  if somethingUndefined prog
-  then render (Prettyprinter.annotate errorStyle (Prettyprinter.pretty ("!! Error: Hay algun simbolo indefinido") <> Prettyprinter.hardline))
-  else do
-    defines <- stToIO $ eval prog
-    interactive' defines erandom (map SentG prog)
+interactive erandom prog =
+  let randomGen = unSTGen erandom
+  in
+  case initRuntime randomGen prog of
+    Just constructRuntime -> let
+      rt = (constructRuntime Skip)
+      symbols = map (\(k, v) -> SentG $ Assign k v) (Map.toList (definitions rt))
+      vcs = map SentG
+            (filter (\case
+                    Eq _ _ -> True
+                    NEq _ _ -> True
+                    NEqStar _ _ -> True
+                    _ -> False) prog)
+      in
+      interactive' rt (symbols ++ vcs)
+    Nothing -> render
+                (annotate errorStyle 
+                (pretty ("!! Error: Hay algun simbolo indefinido")
+                <> line))
 
 {- Arguments:
  -   defines: hashtable of the program symbols (probably overkill)
@@ -89,52 +111,60 @@ interactive erandom prog =
  - Returns:
  -   io: input-output thread with stateful computations
  -}
-interactive' :: Namespace RealWorld -> EvalRandom -> [Generic] -> IO ()
-interactive' defines erandom prog = do
+interactive' :: RuntimeProc -> [Generic] -> IO ()
+interactive' rt prog = do
   printProgState prog
   putStr "CSP> "
   hFlush stdout
   line <- getLine
   case parseLine line of
     (Right events) ->
-      let runProg :: IO [Generic]
-          runProg = do
-            forM
-              prog
-              ( \case
-                  (SentG (Assign _ q)) -> do
-                    let evalRes = evalProcStar defines erandom q
-                    q1 <- stToIO $ runStar evalRes events
-                    return (ProcG q1)
-                  (SentG (Compare p q)) -> do
-                    let evalP = evalProcStar defines erandom p
-                    let evalQ = evalProcStar defines erandom q
-                    traceP <- stToIO $ trace evalP events 
-                    traceQ <- stToIO $ trace evalQ events
-                    {-
-                    traceShowM events
-                    traceShowM traceP
-                    traceShowM traceQ
-                    -}
-                    if (traceP /= traceQ)
-                      then do
-                        return (Error (show (prettyPrint (SentG (Compare p q)))))
-                      else do
-                        p1 <- stToIO $ runStar evalP events
-                        q1 <- stToIO $ runStar evalQ events
-                        return (SentG (Compare p1 q1))
-                  (ProcG p) -> do
-                    let evalRes = evalProcStar defines erandom p
-                    q1 <- stToIO $ runStar evalRes events
-                    return (ProcG q1)
-                  (Error err) -> return (Error err)
-              )
-       in do
-            prog' <- runProg
-            interactive' defines erandom prog'
+      let 
+        advanceProg :: State RuntimeProc [Generic]
+        advanceProg =
+          forM
+          prog
+          (\generic -> 
+            state $ \rt ->
+            case generic of
+              (SentG (Assign _ q)) ->
+                let rtQ = rt {runtimeProc = q}
+                    rtQ' = foldl run rtQ events
+                in (ProcG (runtimeProc rtQ'), rtQ')
+              (SentG (Eq p q)) ->
+                let rtP = rt {runtimeProc = p}
+                    rtQ = rt {runtimeProc = q}
+                    rtP' = foldl run rtQ events
+                    rtQ' = foldl run rtQ events
+                in
+                if (fst $ compareProcs1 rtP rtQ events)
+                  then
+                    (SentG
+                    (Eq (runtimeProc rtP') (runtimeProc rtQ'))
+                    , rtQ')
+                  else
+                    (Error . show . prettyPrint . SentG $
+                    (Eq (runtimeProc rtP') (runtimeProc rtQ'))
+                    , rtQ')
+              (SentG (NEq p q)) -> undefined
+              (SentG (NEqStar p q)) -> undefined
+              (ProcG p) ->
+                let rtP = rt {runtimeProc = p}
+                    rtP' = foldl run rtP events
+                in
+                (ProcG (runtimeProc rtP'), rtP')
+              (Error err) -> (Error err, rt)
+          )
+        -- ejecutar el for
+        (prog', rt') = runState advanceProg rt
+       in
+        interactive' rt' prog'
     (Left error) -> do
-      render ( Prettyprinter.annotate errorStyle (Prettyprinter.pretty ("!! " ++ error) <> Prettyprinter.hardline) )
-      interactive' defines erandom prog
+      render
+        (annotate errorStyle $
+        (pretty ("!! " ++ error))
+        <> Prettyprinter.line)
+      interactive' rt prog
 
 {- Parse interactive CLI input
  - Arguments:
@@ -159,10 +189,24 @@ parseLine' s acc = case s of
   [] -> return acc
   (' ' : cs) -> parseLine' cs acc
   (c : cs)
+    | isNumber c ->
+        case span isNumber (c : cs) of
+          (index, '.':rest)
+            | isLower (head rest) ->
+              let (name, line) = span
+                                 (allowedChars [isLower, isNumber, (==) '_', (==) '.'])
+                                 rest
+              in parseLine' line ((index++"."++name):acc)
+            | otherwise -> throwError ("Error de escritura en el simbolo " ++ [c])
     | isLower c ->
-        let (event, rest) = span ((||) <$> isLower <*> isNumber) (c : cs)
-         in parseLine' rest (event : acc)
-    | True -> throwError ("Error de escritura en el simbolo " ++ [c])
+        let (event, rest) = span
+                            (allowedChars [isLower, isNumber, (==) '_', (==) '.'])
+                            (c:cs)
+        in parseLine' rest (event : acc)
+    | otherwise -> throwError ("Error de escritura en el simbolo " ++ [c])
+
+allowedChars :: [Char -> Bool] -> Char -> Bool
+allowedChars allowed x = any (\f -> f x) allowed
 
 {- Print all sentences, processes and errors in the program state
  - Arguments:
@@ -174,17 +218,8 @@ printProgState :: [Generic] -> IO ()
 printProgState prog =
   let progState :: ST RealWorld (Prettyprinter.Doc AnsiStyle)
       progState = do
-        -- prog' <- mapM (replaceByDef defines) prog
         let hangPrint gen = Prettyprinter.hang 4 (prettyPrint gen)
         return (Prettyprinter.vcat (map hangPrint prog))
    in do
         doc <- stToIO progState
         render (Prettyprinter.indent 4 doc <> Prettyprinter.line)
-
-{-
-replaceByDef :: Namespace RealWorld -> Generic -> ST RealWorld Generic
-replaceByDef defines (ProcG (ByName p)) =
-  maybe (Error (p ++ " Simbolo no definido")) ProcG
-    <$> H.lookup defines p
-replaceByDef _ generic = return generic
--}

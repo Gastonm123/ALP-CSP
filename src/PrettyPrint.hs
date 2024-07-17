@@ -31,6 +31,7 @@ precedence :: Proc -> Maybe Int
 precedence (Prefix _ _) = Just 4
 precedence (ExternalChoice _ _) = Just 3
 precedence (InternalChoice _ _) = Just 3
+precedence (LabeledAlt _ _) = Just 3
 precedence (Interrupt _ _) = Just 2
 precedence (Sequential _ _) = Just 1
 precedence (Parallel _ _) = Just 1
@@ -38,7 +39,9 @@ precedence _ = Nothing
 
 prettyPrint :: Generic -> Doc AnsiStyle
 prettyPrint (SentG (Assign p q)) = fillSep [pretty p, pretty "=", prettyPrint (ProcG q)]
-prettyPrint (SentG (Compare p q)) = fillSep [prettyPrint (ProcG p), pretty "==", prettyPrint (ProcG q)]
+prettyPrint (SentG (Eq p q)) = fillSep [prettyPrint (ProcG p), pretty "==", prettyPrint (ProcG q)]
+prettyPrint (SentG (NEq p q)) = fillSep [prettyPrint (ProcG p), pretty "/=", prettyPrint (ProcG q)]
+prettyPrint (SentG (NEqStar p q)) = fillSep [prettyPrint (ProcG p), pretty "*/=*", prettyPrint (ProcG q)]
 prettyPrint (ProcG p) = prettyPrint' p
 prettyPrint (Error err) = annotate errorStyle (pretty ("* " ++ err ++ " *"))
 
@@ -48,14 +51,13 @@ prettyPrint' Stop = pretty "STOP"
 prettyPrint' Skip = pretty "SKIP"
 prettyPrint' (Prefix pref q) = let
     precedenceP = fromJust (precedence (Prefix pref q))
-    (Event ev) = pref
   in
     maybe
-      (fillSep [pretty ev, pretty "->", prettyPrint' q])
+      (fillSep [pretty pref, pretty "->", prettyPrint' q])
       (\precedenceQ ->
         if precedenceP > precedenceQ
-          then fillSep [pretty ev, pretty "->", paren (prettyPrint' q)]
-          else fillSep [pretty ev, pretty "->", prettyPrint' q])
+          then fillSep [pretty pref, pretty "->", paren (prettyPrint' q)]
+          else fillSep [pretty pref, pretty "->", prettyPrint' q])
       (precedence q)
 prettyPrint' p = let 
     (Binary assoc op q r) = fromBinary p
@@ -89,6 +91,7 @@ data Binary = Binary Assoc String Proc Proc
 fromBinary :: Proc -> Binary
 fromBinary (InternalChoice p q) = Binary Left "|~|" p q
 fromBinary (ExternalChoice p q) = Binary Left "[]" p q
+fromBinary (LabeledAlt p q) = Binary Left "|" p q
 fromBinary (Parallel p q) = Binary Left "||" p q
 fromBinary (Sequential p q) = Binary Left ";" p q
 fromBinary (Interrupt p q) = Binary Left "/\\" p q

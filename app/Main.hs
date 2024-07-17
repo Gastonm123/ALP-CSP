@@ -4,7 +4,7 @@ module Main (main) where
 import           Parser
 import           System.Console.GetOpt
 import qualified System.Environment            as Env
-import           AST
+import           AST (Generic(..), Sentence(..), Proc(..))
 import           Interactive
 
 import           Prettyprinter -- Doc
@@ -16,7 +16,8 @@ import           System.Random.Stateful         (newSTGenM, FrozenGen (freezeGen
 import           Control.Monad.ST               (stToIO)
 
 import           Prelude hiding (error)
-import           RuntimeProc (initRuntime, compareProcs)
+import           RuntimeProc (initRuntime, RuntimeProc(..))
+import           Compare (compareProcs)
 import           Data.List (find)
 import           Data.Maybe
 ---------------------------------------------------------
@@ -90,11 +91,14 @@ runOptions fp opts
             case initRuntime gen prog of
               Just constructRuntime -> if optCheck opts
                 then do
+                  let rt = constructRuntime Skip
                   let vcs = foldr (\sent l -> case sent of
-                                    (Compare p q) -> (constructRuntime p
-                                                     ,constructRuntime q) : l
-                                    _ -> l) [] prog
-                  let verify = uncurry compareProcs <$> vcs
+                                          (Eq p q) -> (constructRuntime p
+                                                      ,constructRuntime q) : l
+                                          _ -> l) [] prog
+                  let negativeVcs = undefined
+                  let negativeStarVcs = undefined
+                  let verify = (\(p, q) -> compareProcs p q (runtimeRandom rt)) <$> vcs
                   let verificationPositive = all fst verify
                   if verificationPositive
                     then print (pretty "Todas las condiciones de verificacion fueron validadas")
