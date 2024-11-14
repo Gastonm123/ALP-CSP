@@ -14,7 +14,6 @@ module Parser (
   P(..)
 ) where
 import ParserDefinitions
-import ParserChannel
 import AST
 import Data.Char
 }
@@ -51,8 +50,6 @@ import Data.Char
 %left '/\\'
 %left '|~|' '[]' '|'
 %right '->'
-
-%nonassoc '?' '!'
 
 %%
 

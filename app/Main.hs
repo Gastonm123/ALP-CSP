@@ -1,23 +1,24 @@
 {-# LANGUAGE MultiWayIf #-}
+{-# LANGUAGE LambdaCase #-}
 module Main (main) where
 
 import           Parser
 import           System.Console.GetOpt
 import qualified System.Environment            as Env
-import           AST (Generic(..), Sentence(..), Proc(..))
+import           AST (Generic(..), Sentence(..))
 import           Interactive
 
 import           Prettyprinter -- Doc
 import           Prettyprinter.Render.Terminal  (AnsiStyle)
-import           PrettyPrint                    (prettyPrint, render, errorStyle)
+import           PrettyPrint                    (prettyPrint, render, errorStyle, successStyle)
 
-import           System.Random                  (mkStdGen, initStdGen)
+import           System.Random                  (mkStdGen, initStdGen, StdGen, RandomGen (split), randoms)
 import           System.Random.Stateful         (newSTGenM, FrozenGen (freezeGen))
 import           Control.Monad.ST               (stToIO)
 
 import           Prelude hiding (error)
-import           RuntimeProc (initRuntime, RuntimeProc(..))
-import           Compare (compareProcs)
+import           RuntimeProc (initRuntime)
+import           Compare (verifyEqual, verifyNEqual, verifyNEqualStar, TestDescription(..))
 import           Data.List (find)
 import           Data.Maybe
 ---------------------------------------------------------
@@ -28,12 +29,22 @@ data Options = Options
   , optSeed  :: Int
   , optHelp  :: Bool
   , optCheck :: Bool
+  , optTestLength :: Int
+  , optNtest :: Int
   }
   deriving Show
 
 defaultOptions :: Options
 defaultOptions =
-  Options { optPrint = False, optAST = False, optSeed = 0, optHelp = False, optCheck = False }
+  Options {
+    optPrint = False
+    , optAST = False
+    , optSeed = 0
+    , optHelp = False
+    , optCheck = False
+    , optTestLength = 5
+    , optNtest = 10
+  }
 
 options :: [OptDescr (Options -> Options)]
 options =
@@ -57,6 +68,15 @@ options =
            ["check"]
            (NoArg (\opts -> opts { optCheck = True }))
            "Validacion parcial de las condiciones de verificacion (VC)."
+  , Option []
+           ["test-length"]
+           (ReqArg (\s opts -> opts { optTestLength = read s }) "LARGO_TRAZAS_DE_PRUEBA")
+           ("Usar trazas de longitud determinada para validacion (por defecto, 5). El " <>
+           "largo final de las trazas es proporcional al alfabeto de cada proceso")
+  , Option []
+           ["ntest"]
+           (ReqArg (\s opts -> opts { optNtest = read s }) "CANTIDAD_DE_TRAZAS")
+           "Usar una cantidad determinada de trazas para validacion (por defecto, 10)"
   ]
 
 finalOptions :: [String] -> IO (Options, [String])
@@ -70,6 +90,14 @@ main = do
   s : opts   <- Env.getArgs
   (opts', _) <- finalOptions opts
   runOptions s opts'
+
+data TestDuration = TestDuration { numTest :: Int, multiplier :: Int, generator :: StdGen }
+
+instance TestDescription TestDuration where
+  repetitions = numTest
+  testLength = multiplier
+  rng = randoms . generator
+  splitRng td = let (g1, g2) = split (generator td) in (randoms g1, td {generator=g2})
 
 runOptions :: FilePath -> Options -> IO ()
 runOptions fp opts
@@ -88,20 +116,29 @@ runOptions fp opts
             gen <- if optSeed opts /= 0
                   then return (mkStdGen (optSeed opts))
                   else initStdGen
+            let testDuration = TestDuration { numTest = optNtest opts, multiplier = optTestLength opts, generator = gen }
             case initRuntime gen prog of
               Just constructRuntime -> if optCheck opts
                 then do
-                  let rt = constructRuntime Skip
-                  let vcs = foldr (\sent l -> case sent of
-                                          (Eq p q) -> (constructRuntime p
-                                                      ,constructRuntime q) : l
-                                          _ -> l) [] prog
-                  let negativeVcs = undefined
-                  let negativeStarVcs = undefined
-                  let verify = (\(p, q) -> compareProcs p q (runtimeRandom rt)) <$> vcs
+                  let vcs = filter (\case
+                                    (Eq _ _) -> True
+                                    (NEq _ _) -> True
+                                    (NEqStar _ _) -> True
+                                    _ -> False) prog
+                  let verify = map
+                               (\case
+                               (Eq p q) -> verifyEqual (constructRuntime p) (constructRuntime q) testDuration
+                               (NEq p q) -> verifyNEqual (constructRuntime p) (constructRuntime q) testDuration
+                               (NEqStar p q) -> verifyNEqualStar (constructRuntime p) (constructRuntime q) testDuration
+                               _ -> undefined)
+                               vcs
                   let verificationPositive = all fst verify
                   if verificationPositive
-                    then print (pretty "Todas las condiciones de verificacion fueron validadas")
+                    then 
+                      render
+                        (annotate successStyle
+                        (pretty "Todas las condiciones de verificacion fueron validadas")
+                        <> line)
                     else
                       let failure = fromJust (find (not . fst) verify) in
                         render (snd failure)

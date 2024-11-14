@@ -8,7 +8,7 @@
 --
 -- This library deals with pretty printing errors, sentences and processes
 
-module PrettyPrint (prettyPrint, Generic(..), errorStyle, render) where
+module PrettyPrint (prettyPrint, Generic(..), errorStyle, successStyle, render) where
 import AST
 import Prettyprinter.Render.Terminal
 import Prettyprinter
@@ -18,6 +18,9 @@ import System.IO (stdout)
 
 errorStyle :: AnsiStyle
 errorStyle = color Red <> bold
+
+successStyle :: AnsiStyle
+successStyle = color Green
 
 {- Precedencia:
 ->              precede a  (4)

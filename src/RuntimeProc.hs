@@ -3,6 +3,7 @@
 {-# LANGUAGE BlockArguments #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# HLINT ignore "Redundant if" #-}
+{-# LANGUAGE InstanceSigs #-}
 module RuntimeProc (
   initRuntime,
   RuntimeProc(..)
@@ -12,17 +13,13 @@ import AST
     ( Proc(..),
       ProcId,
       Sentence(..),
-      Event,
-      Generic(..) )
+      Event )
 import RunnableProc (RunnableProc (..), ProcRep (..))
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 import System.Random (StdGen, RandomGen (genWord8))
 import Control.Parallel (par)
-import PrettyPrint (prettyPrint)
-import Prettyprinter (Pretty(pretty), Doc, line, emptyDoc, vsep)
-import Data.List ( foldl', find )
-import Data.Maybe
+import Data.List ( foldl' )
 
 
 type Defines = Map.Map ProcId Proc
@@ -153,6 +150,8 @@ instance RunnableProc RuntimeProc where
   fromProc (SequentialRep p q) = p {runtimeProc = Sequential (runtimeProc p) (runtimeProc q)}
   fromProc (PrefixRep pref p) = p {runtimeProc = Prefix pref (runtimeProc p)}
   fromProc _ = error "Evaluation error: Trying to get environment from unexpected process representation"
+
+  showProc :: RuntimeProc -> String
   showProc p = show (runtimeProc p)
 
   accept' rt ev = snd3 (evalEvent rt ev Deterministic)

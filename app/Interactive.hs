@@ -12,18 +12,13 @@ import Control.Monad.ST ( RealWorld, stToIO, ST )
 
 import Data.Char (isLower, isNumber)
 import Eval
-    ( eval,
-      evalProcStar,
-      EvalRandom,
-      EvalStarResult(runStar, trace),
-      Namespace,
+    ( EvalRandom,
       Prog )
 import PrettyPrint ( errorStyle, prettyPrint, Generic(..), render )
 import Prettyprinter
     ( Doc,
       annotate,
       hang,
-      hardline,
       indent,
       line,
       vcat,
@@ -31,16 +26,14 @@ import Prettyprinter
 
 import Prettyprinter.Render.Terminal (AnsiStyle)
 import System.IO (hFlush, stdout)
-import Control.Parallel (par)
 import AST
-    ( Proc(Skip, ByName, ExternalChoice, InternalChoice, Parallel,
-           Sequential, Prefix, Interrupt, Stop),
+    ( Proc(Skip),
       Sentence(Eq, NEq, NEqStar, Assign),
       Event )
 
 import RuntimeProc (RuntimeProc(..), initRuntime)
 import RunnableProc (RunnableProc(..))
-import Compare (compareProcs1)
+import Compare (compareProcs)
 import Control.Monad.Trans.State.Lazy
 import System.Random.Stateful (STGen(..))
 import qualified Data.Map as Map
@@ -93,8 +86,8 @@ interactive erandom prog =
       vcs = map SentG
             (filter (\case
                     Eq _ _ -> True
-                    NEq _ _ -> True
-                    NEqStar _ _ -> True
+                    NEq _ _ -> False     -- temporariamente omitido
+                    NEqStar _ _ -> False -- temporariamente omitido
                     _ -> False) prog)
       in
       interactive' rt (symbols ++ vcs)
@@ -137,7 +130,7 @@ interactive' rt prog = do
                     rtP' = foldl run rtQ events
                     rtQ' = foldl run rtQ events
                 in
-                if (fst $ compareProcs1 rtP rtQ events)
+                if (fst $ compareProcs rtP rtQ events)
                   then
                     (SentG
                     (Eq (runtimeProc rtP') (runtimeProc rtQ'))
@@ -197,7 +190,8 @@ parseLine' s acc = case s of
                                  (allowedChars [isLower, isNumber, (==) '_', (==) '.'])
                                  rest
               in parseLine' line ((index++"."++name):acc)
-            | otherwise -> throwError ("Error de escritura en el simbolo " ++ [c])
+            | otherwise -> throwError ("Error de escritura en el simbolo " ++ [head rest])
+          _ -> throwError ("Error de escritura en el simbolo " ++ [c])
     | isLower c ->
         let (event, rest) = span
                             (allowedChars [isLower, isNumber, (==) '_', (==) '.'])

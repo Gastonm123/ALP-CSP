@@ -8,7 +8,7 @@ module Main (main) where
 import Utils ( runProgWithEvents' )
 import Parser ( file_parse, ParseResult(Failed, Ok) )
 import Eval ( Prog, Namespace, alpha, eval )
-import AST ( Event, Generic(Error), Sentence(Assign, Compare) )
+import AST ( Event, Generic(Error), Sentence(..) )
 
 import Control.Monad (forM, replicateM)
 import Control.Monad.State.Strict (state, evalState)
@@ -17,8 +17,7 @@ import Control.Monad.ST (stToIO, ST)
 import Data.Maybe (fromJust)
 import Data.List (findIndex)
 import qualified Data.Set as Set
-import Prettyprinter ( (<+>), indent, Pretty(pretty), hsep, vsep )
-import PrettyPrint (prettyPrint)
+import Prettyprinter ( (<+>), indent, Pretty(pretty) )
 
 data Test = Test { name :: String, file :: String }
 
@@ -31,7 +30,9 @@ tests = [
 generateEvents :: Namespace s -> Prog -> ST s [[Event]]
 generateEvents ns prog = do
   alphas <- forM prog (\case
-    (Compare p q) -> (++) <$> (alpha ns p) <*> (alpha ns q)
+    (Eq p q) -> (++) <$> (alpha ns p) <*> (alpha ns q)
+    (NEq p q) -> undefined
+    (NEqStar p q) -> undefined
     (Assign _ p) -> (alpha ns p))
   let alphaProg = Set.toList (Set.fromList (concat alphas))
   let lenAlpha = length alphaProg

@@ -6,30 +6,36 @@
 {-# HLINT ignore "Eta reduce" #-}
 {-# LANGUAGE InstanceSigs #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# HLINT ignore "Evaluate" #-}
+{-# OPTIONS_GHC -Wno-compat-unqualified-imports #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 module Compare (
   traces,
   Trace(..),
   generateRandomEvents,
   compareProcs,
-  compareProcs1
+  verifyEqual,
+  verifyNEqual,
+  verifyNEqualStar,
+  TestDescription(..)
 ) where
 
 import RunnableProc
 import AST
 
-import Data.Foldable (Foldable(foldl'))
 import qualified Data.Sequence as Seq
-import System.Random (RandomGen, Random (randoms))
-import Control.Monad.State.Strict (evalState, MonadState (state))
+import Control.Monad.State.Strict (evalState, MonadState (state), runState)
 import Control.Monad (replicateM)
-import Prettyprinter.Internal (Pretty(..), align, vsep, (<+>))
+import Prettyprinter.Internal (Pretty(..), align, vsep, (<+>), annotate)
 import qualified Data.Set as Set
 import Prettyprinter.Render.Terminal (AnsiStyle)
-import Prettyprinter (Pretty(pretty), Doc, line, emptyDoc, vsep)
+import Prettyprinter (Doc, line, emptyDoc)
 import Control.Monad.Trans.Accum (runAccum)
 import Control.Monad.Accum (MonadAccum (add))
 import Data.Maybe
 import Data.List
+import PrettyPrint (errorStyle)
+import Data.Foldable (foldlM)
 
 newtype Trace = Trace { unTrace :: [Event] } deriving (Show, Eq)
 
@@ -58,6 +64,7 @@ expandOne p_ ev = expand_ p_
         (InternalChoiceRep q r) -> let
             expandQ = expand_ q
             expandR = expand_ r
+            {-
             internalChoice (altQ, acceptQ) (altR, acceptR) = -- no determinismo angelico: elegimos el escenario mas positivo cuando
                                                              -- podriamos rechazar el evento en todos los casos salvo uno
               if
@@ -65,10 +72,11 @@ expandOne p_ ev = expand_ p_
               | acceptQ -> (altR, acceptR)
               | acceptR -> (altQ, acceptQ)
               | otherwise -> reject
+            -}
           in
-            [internalChoice impQ impR | impQ <- expandQ, impR <- expandR] -- iteramos por todas las "implementaciones" de P/ev y Q/ev
-                                                                          -- idea de R. Hoare
-            ++ expandQ ++ expandR -- las implementaciones de P |~| Q incluyen el "nodeterminismo angelico", P o Q
+            -- [internalChoice impQ impR | impQ <- expandQ, impR <- expandR] -- iteramos por todas las "implementaciones" de P/ev y Q/ev
+            --                                                               -- idea de R. Hoare
+            expandQ ++ expandR -- no usamos "nodeterminismo angelico" ni "nodeterminismo demonico"
         (LabeledAltRep q r) -> let
             expandQ = expand_ q
             expandR = expand_ r
@@ -99,10 +107,10 @@ expandOne p_ ev = expand_ p_
         (InterruptRep  q r) -> let
             expandQ = expand_ q
             expandR = expand_ r
-            interrupt (altQ, acceptQ) (altR, acceptR) = 
+            interrupt (altQ, acceptQ) (altR, acceptR) =
               if
-              | acceptQ && acceptR -> (fromProc 
-                                      (InternalChoiceRep 
+              | acceptQ && acceptR -> (fromProc
+                                      (InternalChoiceRep
                                         (fromProc (InterruptRep altQ r)) altR)
                                       , True)
               | acceptQ -> (fromProc (InterruptRep altQ r), acceptQ)
@@ -167,23 +175,25 @@ instance Pretty TraceTrie where
                 pretty ""
 
 
-data TestDuration = TestDuration { numTest :: Int, multiplier :: Int }
-defaultTest :: TestDuration
-defaultTest = TestDuration { numTest = 10, multiplier = 5 }
+class TestDescription a where
+  repetitions :: a -> Int
+  testLength :: a -> Int
+  rng :: a -> [Int]
+  splitRng :: a -> ([Int], a) -- generate an independent random number list
 
-generateRandomEvents :: (RunnableProc a, RandomGen g) => a -> g -> [[Event]]
-generateRandomEvents rt randomGen = let
+generateRandomEvents :: (RunnableProc a, TestDescription d) => a -> d -> [[Event]]
+generateRandomEvents rt desc = let
   alpha = Seq.fromList (getAlpha rt) :: Seq.Seq Event
-  lenAlpha = length alpha
+  lenAlpha = Data.List.length alpha
   indices =
     evalState
-    (replicateM (numTest defaultTest)
-    (state (splitAt (lenAlpha * multiplier defaultTest))))
-    (randoms randomGen)
+    (replicateM (repetitions desc)
+    (state (splitAt (lenAlpha * (testLength desc)))))
+    (rng desc)
   in (map (\i -> (alpha `Seq.index` (i `mod` lenAlpha))) <$> indices)
 
-compareProcs1 :: (RunnableProc a) => a -> a -> [Event] -> (Bool, Doc AnsiStyle)
-compareProcs1 rtA rtB evs = runAccum compareM emptyDoc
+compareProcs :: (RunnableProc a) => a -> a -> [Event] -> (Bool, Doc AnsiStyle)
+compareProcs rtA rtB evs = runAccum compareM emptyDoc
   where
     compareM =
       let
@@ -197,10 +207,11 @@ compareProcs1 rtA rtB evs = runAccum compareM emptyDoc
             && all (inTrie trieA) tracesB
       then return True
       else do
-        add (pretty "Una comparacion ha fallado\n"
+        add (annotate errorStyle
+                  (pretty "Una comparacion ha fallado\n"
                   <>pretty "    "
-                  <>pretty (showProc rtA) <+> pretty"==" <+> pretty (showProc rtB)
-                  <>line)
+                  <>pretty (showProc rtA) <+> pretty "==" <+> pretty (showProc rtB)
+                  <>line))
         if alphaA /= alphaB then do
           add (pretty "Alfabeto del lado izquierdo: "
                     <> pretty (commaSeparated alphaA)
@@ -209,11 +220,6 @@ compareProcs1 rtA rtB evs = runAccum compareM emptyDoc
                     <> pretty (commaSeparated alphaB)
                     <> line)
         else do
-        -- add (pretty tests <> line)
-        -- add ((pretty . show) (mkTrie tracesA :: TraceTrie) <> line)
-        -- add ((pretty . show) tracesA <> line)
-        -- add ((pretty . show) (mkTrie tracesB :: TraceTrie) <> line)
-        -- add ((pretty . show) tracesB <> line)
           let failure = fromJust (find (not . inTrie trieA) tracesB)
           add (pretty "Traza fallida: "
                     <> pretty (let (Trace failureEvents) = failure
@@ -247,14 +253,14 @@ compareProcs1 rtA rtB evs = runAccum compareM emptyDoc
                      (\x acc -> if acc /= "" then x <> ", " <> acc else x)
                      ""
 
-compareProcs :: (RunnableProc a, RandomGen g) => a -> a -> g -> (Bool, Doc AnsiStyle)
-compareProcs rtA rtB randomGen = runAccum compareM emptyDoc
+verifyEqual :: (RunnableProc a, TestDescription d) => a -> a -> d -> (Bool, Doc AnsiStyle)
+verifyEqual rtA rtB d = runAccum compareM emptyDoc
   where
     compareM =
       let
         alphaA = Set.fromList (getAlpha rtA)
         alphaB = Set.fromList (getAlpha rtB)
-        tests = generateRandomEvents rtA randomGen
+        tests = generateRandomEvents rtA d
         tracesA = concatMap (traces rtA) tests
         tracesB = concatMap (traces rtB) tests
         trieA = mkTrie tracesA :: TraceTrie
@@ -265,7 +271,7 @@ compareProcs rtA rtB randomGen = runAccum compareM emptyDoc
       else do
         add (pretty "Una comparacion ha fallado\n"
                   <>pretty "    "
-                  <>pretty (showProc rtA) <+> pretty"==" <+> pretty (showProc rtB)
+                  <>pretty (showProc rtA) <+> pretty "==" <+> pretty (showProc rtB)
                   <>line)
         if alphaA /= alphaB then do
           add (pretty "Alfabeto del lado izquierdo: "
@@ -275,11 +281,6 @@ compareProcs rtA rtB randomGen = runAccum compareM emptyDoc
                     <> pretty (commaSeparated alphaB)
                     <> line)
         else do
-        -- add (pretty tests <> line)
-        -- add ((pretty . show) (mkTrie tracesA :: TraceTrie) <> line)
-        -- add ((pretty . show) tracesA <> line)
-        -- add ((pretty . show) (mkTrie tracesB :: TraceTrie) <> line)
-        -- add ((pretty . show) tracesB <> line)
           let failure = fromJust (find (not . inTrie trieA) tracesB)
           add (pretty "Traza fallida: "
                     <> pretty (let (Trace failureEvents) = failure
@@ -312,3 +313,47 @@ compareProcs rtA rtB randomGen = runAccum compareM emptyDoc
     commaSeparated = foldr
                      (\x acc -> if acc /= "" then x <> ", " <> acc else x)
                      ""
+
+verifyNEqual :: (RunnableProc a, TestDescription p) => a -> a -> p -> (Bool, Doc AnsiStyle)
+verifyNEqual rtP rtQ td =
+  let (eq, _) = verifyEqual rtP rtQ td
+  in
+    (not eq,
+      if eq
+      then pretty "No se pudo verificar que"
+      <+> pretty (showProc rtP) <+> pretty "y"
+      <+> pretty (showProc rtQ) <+> pretty "son distintos"
+      <> line
+      else pretty "" <> line)
+
+verifyNEqualStar :: (RunnableProc a, TestDescription p) => a -> a -> p -> (Bool, Doc AnsiStyle)
+verifyNEqualStar rtP rtQ td =
+  let
+    (randomNums, td') = splitRng td
+    alpha = Seq.fromList (getAlpha rtP) Seq.>< Seq.fromList (getAlpha rtQ)
+    lenAlpha = Seq.length alpha
+    indices =
+      evalState
+      (replicateM (repetitions td)
+      (state (splitAt (lenAlpha * (testLength td)))))
+      randomNums
+    evss = (map (\i -> (alpha `Seq.index` (i `mod` lenAlpha))) <$> indices)
+    notEqStar =
+      all (fst . (\evs ->
+          runState
+            (foldlM
+              (\notEq ev ->
+                state $ \(rtP', rtQ') ->
+                  (notEq || (not (fst (verifyEqual rtP' rtQ' td')))
+                  , (run rtP' ev, run rtQ' ev)))
+              False
+              evs)
+            (rtP, rtQ))) evss
+  in
+    (notEqStar,
+      if notEqStar
+      then pretty "" <> line
+      else pretty "No se pudo verificar que"
+      <+> pretty (showProc rtP) <+> pretty "y"
+      <+> pretty (showProc rtQ) <+> pretty "son siempre distintos"
+      <> line)
