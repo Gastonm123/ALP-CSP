@@ -6,15 +6,12 @@ LL = put?v -> (malloc.1 -> save.v -> LL |
     malloc.3 -> save.v -> LL | 
     malloc.4 -> save.v -> LL |
     memfull -> LL) |
-    stop -> (free.1 -> (free.2 -> (free.3 -> (free.4 -> SKIP)
-                                          [] SKIP)
-                               [] SKIP)
-                    [] SKIP)
-         [] SKIP
+    stop -> CLEAR
 CLEAR = SKIP []
-    (free.1 -> SKIP [] CLEAR) |
-     free.2 -> SKIP |
-
+    (free.1 -> CLEAR |
+     free.2 -> CLEAR |
+     free.3 -> CLEAR |
+     free.4 -> CLEAR)
 
 ============== O ==============
 
