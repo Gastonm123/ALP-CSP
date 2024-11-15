@@ -6,7 +6,9 @@ lexer cont s = case s of
     ('\n':s)  ->  \line -> lexer cont s (line + 1)
     (c:cs)
         | isSpace c -> lexer cont cs
-        | isAlphaNum c -> lexIdentifier (c:cs)
+        | isAlpha c -> lexIdentifier (c:cs)
+        | isNumber c -> lexNumber (c:cs)
+    ('.':cs) -> cont TokenDot cs
     ('-':('-':cs)) -> lexer cont $ dropWhile ((/=) '\n') cs
     ('{':('-':cs)) -> consumirBK 0 0 cont cs
     ('-':('}':cs)) -> failPos "Comentario no abierto"
