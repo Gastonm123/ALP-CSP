@@ -1,0 +1,39 @@
+MEM.i = malloc.i -> free.i -> MEM.i
+MANAGER = MEM.1 || MEM.2 || MEM.3 || MEM.4
+
+LL = put?v -> (malloc.1 -> save.v -> LL |
+    malloc.2 -> save.v -> LL |
+    malloc.3 -> save.v -> LL | 
+    malloc.4 -> save.v -> LL |
+    memfull -> LL) |
+    stop -> (free.1 -> (free.2 -> (free.3 -> (free.4 -> SKIP)
+                                          [] SKIP)
+                               [] SKIP)
+                    [] SKIP)
+         [] SKIP
+CLEAR = SKIP []
+    (free.1 -> SKIP [] CLEAR) |
+     free.2 -> SKIP |
+
+
+============== O ==============
+
+put.5
+malloc.1
+save.5
+put.3
+malloc.2
+save.3
+put.10
+malloc.3
+save.10
+put.68
+malloc.4
+save.68
+put.70
+memfull
+stop
+free.1
+free.2
+free.3
+free.4
