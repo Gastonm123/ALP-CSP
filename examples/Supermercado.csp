@@ -7,40 +7,35 @@
   El sistema cierra la puerta ~ puerta_cerrar
 -}
 
-1.DK_SENSOR = 1.sensor_persona -> 1.sensor_nadie -> 1.DK_SENSOR
-2.DK_SENSOR = 2.sensor_persona -> 2.sensor_nadie -> 2.DK_SENSOR
+DK_SENSOR.1 = sensor_persona.1 -> sensor_nadie.1 -> DK_SENSOR.1
+DK_SENSOR.2 = sensor_persona.2 -> sensor_nadie.2 -> DK_SENSOR.2
 
-1.PUERTA = 1.sensor_persona -> puerta_abrir -> 1.sensor_nadie -> puerta_cerrar -> 1.PUERTA
-2.PUERTA = 2.sensor_persona -> puerta_abrir -> 2.sensor_nadie -> puerta_cerrar -> 2.PUERTA
+PUERTA.1 = sensor_persona.1 -> puerta_abrir -> sensor_nadie.1 -> puerta_cerrar -> PUERTA.1
+PUERTA.2 = sensor_persona.2 -> puerta_abrir -> sensor_nadie.2 -> puerta_cerrar -> PUERTA.2
 
-1.UN_LADO = 1.DK_SENSOR || 1.PUERTA
-2.UN_LADO = 2.DK_SENSOR || 2.PUERTA
+UN_LADO.1 = DK_SENSOR.1 || PUERTA.1
+UN_LADO.2 = DK_SENSOR.2 || PUERTA.2
 
-S = 1.UN_LADO || 2.UN_LADO
+S = UN_LADO.1 || UN_LADO.2
 
 {-
   Hay un problema: la puerta se abre solo cuando ambos lados estan listos para abrir. Tenemos que agregar arbitraje
 -}
 
-1.PUERTA = 1.sensor_persona -> 1.puerta_abrir -> 1.sensor_nadie -> 1.puerta_cerrar -> 1.PUERTA
-2.PUERTA = 2.sensor_persona -> 2.puerta_abrir -> 2.sensor_nadie -> 2.puerta_cerrar -> 2.PUERTA
+PUERTA.1 = sensor_persona.1 -> puerta_abrir.1 -> sensor_nadie.1 -> puerta_cerrar.1 -> PUERTA.1
+PUERTA.2 = sensor_persona.2 -> puerta_abrir.2 -> sensor_nadie.2 -> puerta_cerrar.2 -> PUERTA.2
 
-ARB = 1.puerta_abrir -> puerta_abrir -> ARB10
-    | 2.puerta_abrir -> puerta_abrir -> ARB01
+ARB = puerta_abrir.1 -> puerta_abrir -> ARB10
+    | puerta_abrir.2 -> puerta_abrir -> ARB01
 
-ARB10 = 1.puerta_cerrar -> puerta_cerrar -> ARB
-      | 2.puerta_abrir -> ARB11
+ARB10 = puerta_cerrar.1 -> puerta_cerrar -> ARB
+      | puerta_abrir.2 -> ARB11
 
-ARB01 = 2.puerta_cerrar -> puerta_cerrar -> ARB
-      | 1.puerta_abrir -> ARB11
+ARB01 = puerta_cerrar.2 -> puerta_cerrar -> ARB
+      | puerta_abrir.1 -> ARB11
 
-ARB11 = 1.puerta_cerrar -> ARB01
-      | 2.puerta_cerrar -> ARB10
+ARB11 = puerta_cerrar.1 -> ARB01
+      | puerta_cerrar.2 -> ARB10
 
-S = 1.UN_LADO || 2.UN_LADO || ARB
+S = UN_LADO.1 || UN_LADO.2 || ARB
 
-{-
-  Verificar que S no tiene deadlock
--}
-
-S */=* STOP

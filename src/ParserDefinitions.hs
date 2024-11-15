@@ -10,6 +10,31 @@ module ParserDefinitions (
   parseError
 ) where
 
+
+data Token
+  = TokenStop
+  | TokenSkip
+  | TokenArrow
+  | TokenExternalChoice
+  | TokenInternalChoice
+  | TokenParallel
+  | TokenInterrupt
+  | TokenReceive String
+  | TokenSend String
+  | TokenProcId String
+  | TokenEvent String
+  | TokenSequential
+  | TokenOpenBrack
+  | TokenCloseBrack
+  | TokenLabeledAlternative
+  | TokenEOF
+  | TokenAssign
+  | TokenEq
+  | TokenNEq
+  | TokenNEqStar
+  | TokenSeparator
+  deriving (Eq, Show)
+  
 data ParseResult a = Ok a | Failed String deriving Show
 type LineNumber = Int
 type P a = String -> LineNumber -> ParseResult a
@@ -25,6 +50,9 @@ returnP a = \_ _ -> Ok a
 
 failP :: String -> P a
 failP err = \_ _ -> Failed err
+
+failPos :: String -> LineNumber -> ParseResult
+failPos err = \line -> Failed $ "Linea " ++ (show line) ++ ": " ++ err
 
 catchP :: P a -> (String -> P a) -> P a
 catchP m k = \s l ->
