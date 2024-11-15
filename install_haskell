@@ -130,16 +130,16 @@ function tools() {
         exit 100
     fi
 
+    fix
     cabal update
     cabal install hlint
     cabal install haskell-language-server
+    stack install happy --resolver ghc-9.8.2
 }
 
 function usage() {
     echo "Usage:"
-    echo "         $0 (base|tools|fix)"
-    echo ""
-    echo "Puede ser necesario llamar a fix para agregar las rutas de GHC al entorno"
+    echo "         $0 (base|tools)"
 }
 
 case "$1" in
@@ -148,9 +148,6 @@ case "$1" in
         ;;
     'tools')
         tools;
-        ;;
-    'fix')
-        fix;
         ;;
     *)
         usage; ;;
