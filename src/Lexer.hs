@@ -3,7 +3,7 @@ module Lexer (lexer) where
 
 import Lang ()
 import ParserMonad ( P, failPos )
-import Data.Char ( isNumber, isAlpha, isSpace )
+import Data.Char ( isNumber, isAlpha, isSpace, isLower, isUpper )
 
 lexer :: (Token -> P a) -> P a
 lexer cont s = case s of
@@ -38,12 +38,18 @@ lexer cont s = case s of
             in cont (TokenSend ('!':msg)) rest
     ('?':cs) -> let (msg, rest) = break (\c -> c == ' ' || c == '\n') cs
             in cont (TokenReceive ('?':msg)) rest
+    ('+':cs) -> cont (TokenBinOp "+") cs
+    ('-':cs) -> cont (TokenBinOp "-") cs
     unknown -> failPos ("No se puede reconocer " ++ take 10 unknown ++ "...")
     where
         lexWord cs = case span isAlpha cs of
             ("STOP", rest) -> cont TokenStop rest
             ("SKIP", rest) -> cont TokenSkip rest
-            (name, rest) -> cont (TokenWord name) rest
+            (name, rest) -> if all isUpper name 
+                then cont (TokenWORD name) rest
+                else if all isLower name
+                then cont (TokenWord name) rest
+                else failPos "Se esperaba un evento o un proceso"
         lexNumber cs = case span isNumber cs of
             (number, rest) -> cont (TokenNumber (read number)) rest
         consumirBK anidado cl cs = case cs of
@@ -88,6 +94,7 @@ data Token
   | TokenSeparator
   | TokenDot
   | TokenWord String
+  | TokenWORD String
   | TokenNumber Int
   | TokenBinOp String
   deriving (Eq, Show)

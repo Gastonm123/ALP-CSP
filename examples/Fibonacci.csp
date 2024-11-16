@@ -1,8 +1,22 @@
+FIBO.0 = call.0 -> FIBO.0
 FIBO.1 = call.1 -> FIBO.1
 FIBO.i = call.i -> call!(i-1) -> call!(i-2) -> FIBO.i
-S = FIBO.1 || FIBO.2 || FIBO.3 || FIBO.4 || FIBO.5 ||
-    FIBO.6 || FIBO.7 || FIBO.8 || FIBO.9 || FIBO.10
+S = FIBO.1 || FIBO.2 || FIBO.3 || FIBO.4 || FIBO.5
 
 ================== O ==================
 
-call.10
+call.5
+call.4
+call.3
+call.2
+call.1
+call.0
+call.1
+call.2
+call.1
+call.0
+call.3
+call.2
+call.1
+call.0
+call.1

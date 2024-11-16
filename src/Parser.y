@@ -33,14 +33,17 @@ import Lexer
   '|'        { TokenLabeledAlternative }
   '/\\'      { TokenInterrupt }
   ';'        { TokenSequential }
-  ProcId     { TokenProcId $$ }
-  Event      { TokenEvent $$ }
   '('        { TokenOpenBrack }
   ')'        { TokenCloseBrack }
   '='        { TokenAssign }
   '=='       { TokenEq }
   '/='       { TokenNEq }
   '*/=*'     { TokenNEqStar }
+  '.'        { TokenDot }
+  BinOp      { TokenBinOp $$ }
+  WORD       { TokenWORD $$ }
+  word       { TokenWord $$ }
+  Number     { TokenNumber $$ }
 
 %left '||' ';'
 %left '/\\'
@@ -49,42 +52,54 @@ import Lexer
 
 %%
 
-Program :: { Prog }
-     : Sentences '-O-' Events   { Prog $1 $2 }
-     | Sentences                { Prog $1 [] }
+Program :: { ([S]) }
+     : Sentences '-O-' Events   { SProg $1 $2 }
+     | Sentences                { SProg $1 [] }
 
-Events :: { [Event] }
+Events :: { [SEvent] }
        : Event Events           { $1 : $2 }
        | Event                  { [$1] }
 
-Sentences :: { [Sentence] }
+ProcRef :: { SProcRef }
+        : WORD '.' Params        { $1 ++ "." ++ $3 ++ "." ++ $5 }
+        | WORD                   {}
+
+Params :: { [SParamater] }
+       : Param Params            { $1 : $2 }
+       | Param                   { [$1] }
+
+Param  :: { SParamater }
+       : word BinOp Number       { SOp }
+Event :: { SEvent }
+      : word '.' indices        { SEvent $1 $3 }
+      | word                    { SEvent $1 [] }
+
+
+Sentences :: { [SSentence] }
           : Sentence Sentences { $1 : $2 }
           | Sentence              { [$1] }
 
-Sentence :: { Sentence }
-         : ProcId '=' Proc   { Assign $1 $3 }
-         | Proc '==' Proc    { Eq $1 $3 }
-         | Proc '/=' Proc    { NEq $1 $3 }
-         | Proc '*/=*' Proc    { NEqStar $1 $3 }
+Sentence :: { SSentence }
+         : ProcRef '=' Proc   { SAssign $1 $3 }
 
-Prefix :: { Event }
+Prefix :: { SEvent }
        : Event       { $1 }
 
-Proc :: { Proc }
-     : Prefix '->' Proc           { Prefix $1 $3 }
+Proc :: { SProc }
+     : Prefix '->' Proc           { SPrefix $1 $3 }
      | Proc '|' Proc              
             {% case ($1, $3) of
-            (Prefix _ _, Prefix _ _) -> returnP $ LabeledAlt $1 $3
-            (Prefix _ _, LabeledAlt _ _) -> returnP $ LabeledAlt $1 $3
-            (LabeledAlt _ _, Prefix _ _) -> returnP $ LabeledAlt $1 $3
-            (LabeledAlt _ _, LabeledAlt _ _) -> returnP $ LabeledAlt $1 $3
+            (SPrefix _ _, SPrefix _ _) -> returnP $ SLabeledAlt $1 $3
+            (SPrefix _ _, SLabeledAlt _ _) -> returnP $ SLabeledAlt $1 $3
+            (SLabeledAlt _ _, SPrefix _ _) -> returnP $ SLabeledAlt $1 $3
+            (SLabeledAlt _ _, SLabeledAlt _ _) -> returnP $ SLabeledAlt $1 $3
             _ -> (failPos "Se esperaban expresiones con guarda") }
-     | Proc '[]' Proc             { ExternalChoice $1 $3 }
-     | Proc '|~|' Proc            { InternalChoice $1 $3 }
-     | Proc '/\\' Proc            { Interrupt $1 $3 }
-     | Proc ';' Proc              { Sequential $1 $3 }
-     | Proc '||' Proc             { Parallel $1 $3 }
-     | STOP                       { Stop }
-     | SKIP                       { Skip }
-     | ProcId                     { ByName $1 }
+     | Proc '[]' Proc             { SExternalChoice $1 $3 }
+     | Proc '|~|' Proc            { SInternalChoice $1 $3 }
+     | Proc '/\\' Proc            { SInterrupt $1 $3 }
+     | Proc ';' Proc              { SSequential $1 $3 }
+     | Proc '||' Proc             { SParallel $1 $3 }
+     | STOP                       { SStop }
+     | SKIP                       { SSkip }
+     | ProcRef                    { SByName $1 }
      | '(' Proc ')'               { $2 }
