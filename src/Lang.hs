@@ -2,8 +2,7 @@ module Lang (SProg(..), SIndex, SSentence(..), BinOp, SParameter(..), SProcRef(.
 import Data.List (intercalate)
 
 -- Parametros de un proceso. Un parametro puede ser
--- inductivo o definir una referencia a un caso 
--- especifico
+-- inductivo o definir una referencia a un valor fijo
 data Parameter
   = Inductive String Int
   | Base String
