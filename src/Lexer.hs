@@ -26,18 +26,13 @@ lexer cont s = case s of
     ('|':('|':cs)) -> cont TokenParallel cs
     ('|':cs) -> cont TokenLabeledAlternative cs
     (';':cs) -> cont TokenSequential cs
-    ('=':('=':('=':cs))) -> maybe
+    ('=':('=':cs)) -> maybe
             (failPos "Se esperaba un separador")
             (cont TokenSeparator)
             (consumirSep cs)
-    ('=':('=':cs)) -> cont TokenEq cs
-    ('/':('=':cs)) -> cont TokenNEq cs
-    ('*':('/':('=':('*':cs)))) -> cont TokenNEqStar cs
     ('=':cs) -> cont TokenAssign cs
-    ('!':cs) -> let (msg, rest) = break (\c -> c == ' ' || c == '\n') cs
-            in cont (TokenSend ('!':msg)) rest
-    ('?':cs) -> let (msg, rest) = break (\c -> c == ' ' || c == '\n') cs
-            in cont (TokenReceive ('?':msg)) rest
+    ('!':cs) -> cont TokenExclamation cs
+    ('?':cs) -> cont TokenQuestion cs
     ('+':cs) -> cont (TokenBinOp "+") cs
     ('-':cs) -> cont (TokenBinOp "-") cs
     unknown -> failPos ("No se puede reconocer " ++ take 10 unknown ++ "...")
@@ -49,7 +44,7 @@ lexer cont s = case s of
                 then cont (TokenWORD name) rest
                 else if all isLower name
                 then cont (TokenWord name) rest
-                else failPos "Se esperaba un evento o un proceso"
+                else failPos "Se esperaba un evento, un proceso o un indice"
         lexNumber cs = case span isNumber cs of
             (number, rest) -> cont (TokenNumber (read number)) rest
         consumirBK anidado cl cs = case cs of
@@ -69,7 +64,7 @@ lexer cont s = case s of
                 ('O':c2) -> Just c2
                 _ -> Nothing
             case dropWhile (== ' ') c2 of
-                ('=':'=':'=':c3) -> Just (dropWhile (== '=') c3)
+                ('=':('=':c3)) -> Just (dropWhile (== '=') c3)
                 _ -> Nothing
 
 data Token
@@ -80,17 +75,14 @@ data Token
   | TokenInternalChoice
   | TokenParallel
   | TokenInterrupt
-  | TokenReceive String
-  | TokenSend String
+  | TokenExclamation
+  | TokenQuestion
   | TokenSequential
   | TokenOpenBrack
   | TokenCloseBrack
   | TokenLabeledAlternative
   | TokenEOF
   | TokenAssign
-  | TokenEq
-  | TokenNEq
-  | TokenNEqStar
   | TokenSeparator
   | TokenDot
   | TokenWord String

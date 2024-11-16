@@ -10,8 +10,8 @@
         "**/.stack-work": true,
         "**/dist-newstyle": true,
         "**/stack.yaml": true,
-        "**/package.yaml": true,
-        "**/CSP-stack.cabal": true,
+        "**/package.yaml": false,
+        "**/CSP-stack.cabal": false,
         "**/stack.yaml.lock": true,
         "**/hie.yaml": true
     }

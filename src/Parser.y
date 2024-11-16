@@ -36,10 +36,9 @@ import Lexer
   '('        { TokenOpenBrack }
   ')'        { TokenCloseBrack }
   '='        { TokenAssign }
-  '=='       { TokenEq }
-  '/='       { TokenNEq }
-  '*/=*'     { TokenNEqStar }
   '.'        { TokenDot }
+  '?'        { TokenQuestion }
+  '!'        { TokenExclamation }
   BinOp      { TokenBinOp $$ }
   WORD       { TokenWORD $$ }
   word       { TokenWord $$ }
@@ -52,41 +51,66 @@ import Lexer
 
 %%
 
-Program :: { ([S]) }
-     : Sentences '-O-' Events   { SProg $1 $2 }
+Program :: { SProg }
+     : Sentences '-O-' Trace    { SProg $1 $3 }
      | Sentences                { SProg $1 [] }
+
+Trace  :: { [Event] }
+       : TraceEv Trace          { $1 : $2 }
+       | TraceEv                { $1 }
+       | {- empty -}            { [] }
+
+TraceEv :: { Event }
+        : word '.' ValuedIndices  { Event $1 $3 }
+        | word                    { Event $1 }
+
+ProcRef :: { SProcRef }
+        : WORD '.' Params        { SProcRef $1 $3 }
+        | WORD                   { SProcRef $1 [] }
+
+Params :: { [SParamater] }
+       : Param '.' Params        { $1 : $3 }
+       | Param                   { [$1] }
+
+Param  :: { SParamater }
+       : word BinOp Number       { SOp $1 $2 $3 }
+       | word                    { SBase $1 }
+       | ( Param )               { $2 }
 
 Events :: { [SEvent] }
        : Event Events           { $1 : $2 }
        | Event                  { [$1] }
 
-ProcRef :: { SProcRef }
-        : WORD '.' Params        { $1 ++ "." ++ $3 ++ "." ++ $5 }
-        | WORD                   {}
-
-Params :: { [SParamater] }
-       : Param Params            { $1 : $2 }
-       | Param                   { [$1] }
-
-Param  :: { SParamater }
-       : word BinOp Number       { SOp }
 Event :: { SEvent }
-      : word '.' indices        { SEvent $1 $3 }
+      : word '.' Indices        { SEvent $1 $3 }
+      | word '!' Index          { SEvent $1 [$3] }
+      | word '?' Index          { SEvent $1 [$3] }
       | word                    { SEvent $1 [] }
 
+Index :: { SIndex }
+      : word BinOp number       { IOp $1 $2 $3 }
+      | word                    { Index $1 }
+      | ( Index )               { $2 }
+
+Indices :: { [SIndex] }
+        : Index '.' Indices     { $1 : $3 }
+        | Index '!' Index       { $1 : [$3] }
+        | Index '?' Index       { $1 : [$3] }
+        | Index                 { $1 }
+
+ValuedIndices :: { [Index] }
+              : num '.' ValuedIndices { (Index $1) : $3 }
+              | num                   { [Index $1] }
 
 Sentences :: { [SSentence] }
-          : Sentence Sentences { $1 : $2 }
+          : Sentence Sentences    { $1 : $2 }
           | Sentence              { [$1] }
 
 Sentence :: { SSentence }
          : ProcRef '=' Proc   { SAssign $1 $3 }
 
-Prefix :: { SEvent }
-       : Event       { $1 }
-
 Proc :: { SProc }
-     : Prefix '->' Proc           { SPrefix $1 $3 }
+     : Event '->' Proc           { SPrefix $1 $3 }
      | Proc '|' Proc              
             {% case ($1, $3) of
             (SPrefix _ _, SPrefix _ _) -> returnP $ SLabeledAlt $1 $3

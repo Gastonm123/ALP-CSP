@@ -1,4 +1,4 @@
-module Lang (SSentence(..), BinOp, SParameter(..), SProcRef(..), SProc(..), SEvent, ProcRef(..), Parameter(..), Event(..), Index, Proc (..), Sentence (..), Generic (..), Prog (..)) where
+module Lang (SProg(..), SIndex, SSentence(..), BinOp, SParameter(..), SProcRef(..), SProc(..), SEvent, ProcRef(..), Parameter(..), Event(..), Index(..), Proc (..), Sentence (..), Generic (..), Prog (..)) where
 import Data.List (intercalate)
 
 -- Parametros de un proceso. Un parametro puede ser
@@ -18,7 +18,11 @@ data ProcRef
   deriving Eq
 
 -- Eventos
-type Index = String
+data Index
+  = Index String
+  | IOp String BinOp Int
+  deriving Eq
+
 data Event =
   Event {
     eventName :: String,
@@ -46,10 +50,11 @@ data Sentence
   deriving (Show, Eq)
 
 -- Programa
-data Prog = Prog {
-  sentences :: [Sentence],
-  events :: [Event]
-}
+data Prog = 
+  Prog {
+    sentences :: [Sentence],
+    events :: [Event]
+  }
 
 
 -- Syntax sugaring
@@ -66,6 +71,7 @@ data SProcRef =
   }
   deriving Eq
 
+type SIndex = Index
 type SEvent = Event
 
 data SProc
@@ -85,6 +91,12 @@ data SSentence
   = SAssign SProcRef SProc
   deriving (Show, Eq)
 
+data SProg =
+  SProg {
+    ssentences :: [SSentence],
+    sevents :: [Event]
+  }
+
 -- DEPRECATED
 -- Generic container
 data Generic = SentG Sentence | ProcG Proc | Error String deriving Show -- similar a un OR
@@ -97,8 +109,12 @@ instance Show Parameter where
 instance Show ProcRef where
   show (ProcRef n p) = if not (null p) then n ++ "." ++ intercalate "." (map show p) else n
 
+instance Show Index where
+  show (Index i) = i
+  show (IOp i op c) = i ++ op ++ show c
+
 instance Show Event where
-  show (Event n i) = if not (null i) then n ++ "." ++ intercalate "." i else n
+  show (Event n i) = if not (null i) then n ++ "." ++ intercalate "." (map show i) else n
 
 instance Show SParameter where
   show (SOp n op c) = n ++ op ++ show c

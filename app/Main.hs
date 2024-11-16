@@ -2,35 +2,26 @@
 {-# LANGUAGE LambdaCase #-}
 module Main (main) where
 
-import           Parser
+import           ParserMonad
 import           System.Console.GetOpt
 import qualified System.Environment            as Env
-import           AST (Generic(..), Sentence(..))
-import           Interactive
+import           Lang
+import           Parser
 
 import           Prettyprinter -- Doc
 import           Prettyprinter.Render.Terminal  (AnsiStyle)
-import           PrettyPrint                    (prettyPrint, render, errorStyle, successStyle)
-
-import           System.Random                  (mkStdGen, initStdGen, StdGen, RandomGen (split), randoms)
-import           System.Random.Stateful         (newSTGenM, FrozenGen (freezeGen))
-import           Control.Monad.ST               (stToIO)
+-- import           PrettyPrint                    (prettyPrint, render, errorStyle, successStyle)
 
 import           Prelude hiding (error)
-import           RuntimeProc (initRuntime)
-import           Compare (verifyEqual, verifyNEqual, verifyNEqualStar, TestDescription(..))
 import           Data.List (find)
 import           Data.Maybe
+import           GHC.Base (error)
 ---------------------------------------------------------
 
 data Options = Options
   { optPrint :: Bool
   , optAST   :: Bool
-  , optSeed  :: Int
   , optHelp  :: Bool
-  , optCheck :: Bool
-  , optTestLength :: Int
-  , optNtest :: Int
   }
   deriving Show
 
@@ -39,11 +30,7 @@ defaultOptions =
   Options {
     optPrint = False
     , optAST = False
-    , optSeed = 0
     , optHelp = False
-    , optCheck = False
-    , optTestLength = 5
-    , optNtest = 10
   }
 
 options :: [OptDescr (Options -> Options)]
@@ -56,27 +43,10 @@ options =
            ["AST"]
            (NoArg (\opts -> opts { optAST = True }))
            "Mostrar el AST del programa de entrada."
-  , Option ['s']
-           ["seed"]
-           (ReqArg (\s opts -> opts { optSeed = read s + 1}) "SEMILLA")
-           "Usar una semilla para el generador de numeros aleatorios."
   , Option ['h']
            ["help"]
            (NoArg (\opts -> opts { optHelp = True }))
            "Imprimir guia de uso."
-  , Option []
-           ["check"]
-           (NoArg (\opts -> opts { optCheck = True }))
-           "Validacion parcial de las condiciones de verificacion (VC)."
-  , Option []
-           ["test-length"]
-           (ReqArg (\s opts -> opts { optTestLength = read s }) "LARGO_TRAZAS_DE_PRUEBA")
-           ("Usar trazas de longitud determinada para validacion (por defecto, 5). El " <>
-           "largo final de las trazas es proporcional al alfabeto de cada proceso")
-  , Option []
-           ["ntest"]
-           (ReqArg (\s opts -> opts { optNtest = read s }) "CANTIDAD_DE_TRAZAS")
-           "Usar una cantidad determinada de trazas para validacion (por defecto, 10)"
   ]
 
 finalOptions :: [String] -> IO (Options, [String])
@@ -91,20 +61,12 @@ main = do
   (opts', _) <- finalOptions opts
   runOptions s opts'
 
-data TestDuration = TestDuration { numTest :: Int, multiplier :: Int, generator :: StdGen }
-
-instance TestDescription TestDuration where
-  repetitions = numTest
-  testLength = multiplier
-  rng = randoms . generator
-  splitRng td = let (g1, g2) = split (generator td) in (randoms g1, td {generator=g2})
-
 runOptions :: FilePath -> Options -> IO ()
 runOptions fp opts
   | optHelp opts = putStrLn (usageInfo "Uso: " options)
   | otherwise = do
     s <- readFile fp
-    case file_parse s of
+    case parseFile s 0 of
       Failed error -> print (pretty error)
       Ok prog -> if
         | optAST opts       -> print prog
@@ -112,41 +74,4 @@ runOptions fp opts
             let hangPrint :: Sentence -> Doc AnsiStyle
                 hangPrint p = hang 4 (prettyPrint (SentG p))
             print (vcat (map hangPrint prog))
-        | otherwise -> do
-            gen <- if optSeed opts /= 0
-                  then return (mkStdGen (optSeed opts))
-                  else initStdGen
-            let testDuration = TestDuration { numTest = optNtest opts, multiplier = optTestLength opts, generator = gen }
-            case initRuntime gen prog of
-              Just constructRuntime -> if optCheck opts
-                then do
-                  let vcs = filter (\case
-                                    (Eq _ _) -> True
-                                    (NEq _ _) -> True
-                                    (NEqStar _ _) -> True
-                                    _ -> False) prog
-                  let verify = map
-                               (\case
-                               (Eq p q) -> verifyEqual (constructRuntime p) (constructRuntime q) testDuration
-                               (NEq p q) -> verifyNEqual (constructRuntime p) (constructRuntime q) testDuration
-                               (NEqStar p q) -> verifyNEqualStar (constructRuntime p) (constructRuntime q) testDuration
-                               _ -> undefined)
-                               vcs
-                  let verificationPositive = all fst verify
-                  if verificationPositive
-                    then 
-                      render
-                        (annotate successStyle
-                        (pretty "Todas las condiciones de verificacion fueron validadas")
-                        <> line)
-                    else
-                      let failure = fromJust (find (not . fst) verify) in
-                        render (snd failure)
-                else do
-                  frozenRand <- stToIO $ do
-                    erandom <- newSTGenM gen
-                    freezeGen erandom
-                  interactive frozenRand prog
-              Nothing -> render (Prettyprinter.annotate errorStyle
-                (Prettyprinter.pretty "!! Error: Hay algun simbolo indefinido"
-                <> Prettyprinter.hardline))
+        | otherwise -> error "optHelp ya fue matcheado"
