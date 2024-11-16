@@ -33,14 +33,16 @@ import Lexer
   '|'        { TokenLabeledAlternative }
   '/\\'      { TokenInterrupt }
   ';'        { TokenSequential }
-  ProcId     { TokenProcId $$ }
-  Event      { TokenEvent $$ }
   '('        { TokenOpenBrack }
   ')'        { TokenCloseBrack }
   '='        { TokenAssign }
   '=='       { TokenEq }
   '/='       { TokenNEq }
   '*/=*'     { TokenNEqStar }
+  '.'        { TokenDot }
+  BinOp      { TokenBinOp $$ }
+  Word       { TokenWord $$ }
+  Number     { TokenNumber $$ }
 
 %left '||' ';'
 %left '/\\'
@@ -56,6 +58,10 @@ Program :: { Prog }
 Events :: { [Event] }
        : Event Events           { $1 : $2 }
        | Event                  { [$1] }
+
+ProcId :: { String }
+       : Proc '.' Indices       { $1 ++ "." ++ $3 ++ "." ++ $5 }
+       | Proc                   {}
 
 Sentences :: { [Sentence] }
           : Sentence Sentences { $1 : $2 }

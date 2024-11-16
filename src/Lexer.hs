@@ -38,6 +38,8 @@ lexer cont s = case s of
             in cont (TokenSend ('!':msg)) rest
     ('?':cs) -> let (msg, rest) = break (\c -> c == ' ' || c == '\n') cs
             in cont (TokenReceive ('?':msg)) rest
+    ('+':cs) -> cont (TokenBinOp "+") cs
+    ('-':cs) -> cont (TokenBinOp "-") cs
     unknown -> failPos ("No se puede reconocer " ++ take 10 unknown ++ "...")
     where
         lexWord cs = case span isAlpha cs of
