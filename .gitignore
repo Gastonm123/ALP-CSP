@@ -1,7 +1,4 @@
 .stack-work/
-.vscode
 stack.yaml.lock
 CSP-stack.cabal
-informe
-*~
 dist-newstyle

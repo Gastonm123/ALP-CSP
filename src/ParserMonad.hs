@@ -1,39 +1,6 @@
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# HLINT ignore "Redundant lambda" #-}
-module ParserDefinitions (
-  ParseResult(..),
-  P,
-  thenP,
-  returnP,
-  failP,
-  catchP,
-  parseError
-) where
-
-
-data Token
-  = TokenStop
-  | TokenSkip
-  | TokenArrow
-  | TokenExternalChoice
-  | TokenInternalChoice
-  | TokenParallel
-  | TokenInterrupt
-  | TokenReceive String
-  | TokenSend String
-  | TokenProcId String
-  | TokenEvent String
-  | TokenSequential
-  | TokenOpenBrack
-  | TokenCloseBrack
-  | TokenLabeledAlternative
-  | TokenEOF
-  | TokenAssign
-  | TokenEq
-  | TokenNEq
-  | TokenNEqStar
-  | TokenSeparator
-  deriving (Eq, Show)
+module ParserMonad (ParseResult(..), P, thenP, returnP, failP, catchP, parseError, failPos) where
   
 data ParseResult a = Ok a | Failed String deriving Show
 type LineNumber = Int
@@ -51,8 +18,8 @@ returnP a = \_ _ -> Ok a
 failP :: String -> P a
 failP err = \_ _ -> Failed err
 
-failPos :: String -> LineNumber -> ParseResult
-failPos err = \line -> Failed $ "Linea " ++ (show line) ++ ": " ++ err
+failPos :: String -> LineNumber -> ParseResult a
+failPos err = \line -> Failed $ "Linea " ++ show line ++ ": " ++ err
 
 catchP :: P a -> (String -> P a) -> P a
 catchP m k = \s l ->

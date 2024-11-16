@@ -1,0 +1,18 @@
+{
+    "files.exclude": {
+        "**/.git": true,
+        "**/.svn": true,
+        "**/.hg": true,
+        "**/CVS": true,
+        "**/.DS_Store": true,
+        "**/Thumbs.db": true,
+        "**/*.crswap": true,
+        "**/.stack-work": true,
+        "**/dist-newstyle": true,
+        "**/stack.yaml": true,
+        "**/package.yaml": true,
+        "**/CSP-stack.cabal": true,
+        "**/stack.yaml.lock": true,
+        "**/hie.yaml": true
+    }
+}

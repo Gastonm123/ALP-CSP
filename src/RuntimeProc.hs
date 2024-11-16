@@ -26,8 +26,12 @@ type Defines = Map.Map ProcId Proc
 type AlphaSymbols = Map.Map ProcId [Event]
 type Seen = Set.Set ProcId
 
-data RuntimeProc = RuntimeProc { definitions :: Defines, runtimeRandom :: StdGen, alphaSymbols :: AlphaSymbols, runtimeProc :: Proc }
-type Prog = [Sentence]
+data RuntimeProc = RuntimeProc {
+  definitions :: Defines,
+  runtimeRandom :: StdGen,
+  alphaSymbols :: AlphaSymbols,
+  runtimeProc :: Proc
+}
 
 somethingUndefined :: Prog -> Bool
 somethingUndefined prog = let

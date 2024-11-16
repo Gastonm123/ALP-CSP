@@ -32,9 +32,9 @@ module Eval (
 ) where
 
 import AST
-    ( Sentence(Assign),
-      Proc(Skip, InternalChoice, ExternalChoice, Parallel, Sequential,
-           Prefix, Interrupt, ByName, Stop, LabeledAlt),
+    ( Sentence(..),
+      Proc(..),
+      Prog(..),
       Event,
       ProcId )
 import Control.Monad ( foldM, forM_ )
@@ -56,8 +56,6 @@ type Namespace s = HashTable s ProcId Proc
 type EvalRandom = STGen StdGen
 
 type Set s = HashTable s ProcId Bool
-
-type Prog = [Sentence]
 
 {- Cambiamos la representacion de los procesos usando las propiedades de
  - conmutatividad y asociatividad del operador de paralelismo para usar una
