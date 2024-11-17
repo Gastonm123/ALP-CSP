@@ -1,12 +1,13 @@
+{-# LANGUAGE GADTs #-}
 module Lang (SProg(..), SIndex, SSentence(..), BinOp, SParameter(..), SProcRef(..), SProc(..), SEvent, ProcRef(..), Parameter(..), Event(..), Index(..), Proc (..), Sentence (..), Generic (..), Prog (..)) where
 import Data.List (intercalate)
 
 -- Parametros de un proceso. Un parametro puede ser
 -- inductivo o definir una referencia a un valor fijo
 data Parameter
-  = Inductive String Int
-  | Base String
-  deriving Eq
+  = Inductive String Int -- es inductivo si tiene una variable
+                         -- (n, n+1, n+2, etc.)
+  | Base Int
 
 -- Referencias a procesos
 data ProcRef
@@ -14,20 +15,23 @@ data ProcRef
     procName :: String,
     params   :: [Parameter]
   }
-  deriving Eq
 
 -- Eventos
+data Val
+  = Char Char
+  | Int Int
+  deriving Show
+
 data Index
-  = Index String
+  = IVal Val
+  | IVar String
   | IOp String BinOp Int
-  deriving Eq
 
 data Event =
   Event {
     eventName :: String,
     indices   :: [Index]
   }
-  deriving Eq
 
 -- Procesos
 data Proc
@@ -41,12 +45,12 @@ data Proc
   | ByName ProcRef
   | Stop
   | Skip
-  deriving (Show, Eq)
+  deriving Show
 
 -- Sentencias
 data Sentence
   = Assign ProcRef Proc
-  deriving (Show, Eq)
+  deriving Show
 
 -- Programa
 data Prog = 
@@ -60,15 +64,13 @@ data Prog =
 type BinOp = String
 data SParameter 
   = SOp String BinOp Int
-  | SBase String
-  deriving Eq
+  | SBase Int
   
 data SProcRef =
   SProcRef {
     sprocName :: String,
     sparams   :: [SParameter]
   }
-  deriving Eq
 
 type SIndex = Index
 type SEvent = Event
@@ -84,11 +86,11 @@ data SProc
   | SByName SProcRef
   | SStop
   | SSkip
-  deriving (Show, Eq)
+  deriving Show
 
 data SSentence
   = SAssign SProcRef SProc
-  deriving (Show, Eq)
+  deriving Show
 
 data SProg =
   SProg {
@@ -103,13 +105,14 @@ data Generic = SentG Sentence | ProcG Proc | Error String deriving Show -- simil
 
 instance Show Parameter where
   show (Inductive n c) = n ++ show c
-  show (Base n) = n
+  show (Base n) = show n
 
 instance Show ProcRef where
   show (ProcRef n p) = if not (null p) then n ++ "." ++ intercalate "." (map show p) else n
 
 instance Show Index where
-  show (Index i) = i
+  show (IVal i) = show i
+  show (IVar n) = n
   show (IOp i op c) = i ++ op ++ show c
 
 instance Show Event where

@@ -58,24 +58,24 @@ Program :: { SProg }
 
 Trace  :: { [Event] }
        : TraceEv Trace          { $1 : $2 }
-       | TraceEv                { $1 }
+       | TraceEv                { [$1] }
        | {- empty -}            { [] }
 
 TraceEv :: { Event }
         : word '.' ValuedIndices  { Event $1 $3 }
-        | word                    { Event $1 }
+        | word                    { Event $1 [] }
 
 ProcRef :: { SProcRef }
         : WORD '.' Params        { SProcRef $1 $3 }
         | WORD                   { SProcRef $1 [] }
 
-Params :: { [SParamater] }
+Params :: { [SParameter] }
        : Param '.' Params        { $1 : $3 }
        | Param                   { [$1] }
 
-Param  :: { SParamater }
+Param  :: { SParameter }
        : word BinOp Number       { SOp $1 $2 $3 }
-       | word                    { SBase $1 }
+       | Number                  { SBase $1 }
        | '(' Param ')'               { $2 }
 
 Events :: { [SEvent] }
@@ -83,26 +83,29 @@ Events :: { [SEvent] }
        | Event                  { [$1] }
 
 Event :: { SEvent }
-      : word '.' Indices        { SEvent $1 $3 }
-      | word '!' Index          { SEvent $1 [$3] }
-      | word '?' Index          { SEvent $1 [$3] }
-      | word                    { SEvent $1 [] }
+      : word '.' Indices        { Event $1 $3 }
+      | word '!' Index          { Event $1 [$3] }
+      | word '?' Index          { Event $1 [$3] }
+      | word                    { Event $1 [] }
 
 Index :: { SIndex }
       : word BinOp Number       { IOp $1 $2 $3 }
-      | word                    { Index $1 }
-      | Char                    { Index $1 }
-      | '(' Index ')'               { $2 }
+      | word                    { IVar $1 }
+      | Char                    { IVal (Char $1) }
+      | Number                  { IVal (Int $1) }
+      | '(' Index ')'           { $2 }
 
 Indices :: { [SIndex] }
         : Index '.' Indices     { $1 : $3 }
         | Index '!' Index       { $1 : [$3] }
         | Index '?' Index       { $1 : [$3] }
-        | Index                 { $1 }
+        | Index                 { [$1] }
 
 ValuedIndices :: { [Index] }
-              : Number '.' ValuedIndices { (Index $1) : $3 }
-              | Number                   { [Index $1] }
+              : Number '.' ValuedIndices { (IVal (Int $1)) : $3 }
+              | Number                   { [IVal (Int $1)] }
+              | Char '.' ValuedIndices   { (IVal (Char $1)) : $3 }
+              | Char                     { [IVal (Char $1)] }
 
 Sentences :: { [SSentence] }
           : Sentence Sentences    { $1 : $2 }

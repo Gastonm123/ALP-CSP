@@ -1,8 +1,8 @@
 {-# OPTIONS_GHC -Wno-unused-matches #-}
-module Lexer (lexer) where
+module Lexer (lexer, Token(..)) where
 
 import Lang ()
-import ParserMonad ( P, failPos )
+import ParserMonad ( P, failPos, ParseResult )
 import Data.Char ( isNumber, isAlpha, isSpace, isLower, isUpper )
 
 lexer :: (Token -> P a) -> P a
@@ -57,6 +57,8 @@ lexer cont s = case s of
             ('\n':css) -> consumirBK anidado (cl+1) css
             (_:css) -> consumirBK anidado cl css
             [] -> cont TokenEOF []
+            where
+                _ = anidado :: Int
         consumirSep cs = do
             c1 <- case dropWhile (== '=') cs of
                 (' ':c1) -> Just c1

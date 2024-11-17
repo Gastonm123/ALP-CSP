@@ -1,20 +1,22 @@
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# HLINT ignore "Redundant bracket" #-}
 {-# HLINT ignore "Use lambda-case" #-}
+{-# OPTIONS_GHC -Wno-incomplete-patterns #-}
 module Elab where
-    
+
 import Lang
-import GHC.Utils.Misc
+import Control.Monad.State
+import Control.Monad (when)
 
 elabProg :: SProg -> Prog
 elabProg (SProg sents trace) = Prog (map elabSent sents) trace
 
 elabSent :: SSentence -> Sentence
 elabSent (SAssign pRef p) = let
-    params = sparams pRef
+    pars = sparams pRef
     name = sprocName pRef
-    (normP, normParams) = runState (mapM elabParam params) p
-    in (SAssign (SProcRef name normParams) (sproc2proc normP))
+    (normParams, normP) = runState (mapM elabParam pars) p
+    in (Assign (ProcRef name normParams) (shallowElabProc normP))
 
 type IndexName = String
 
@@ -25,16 +27,12 @@ elabParam par = do
             (\n _ -> maxIdxDiff n 0 p')
             (\n c -> maxIdxDiff n c p')
             (\n   -> maxIdxDiff n 0 p')
-    let n = matchPar (const2 id) (const2 id) id
-    when (maxDiff > 0) (put (normalizeIdx n maxDiff p'))
+    let n = matchPar const const id
+    when (maxDiff > 0) (put (normalizeIdxPar n maxDiff p'))
     matchPar
-        (\n c -> return (Inductive n (c+maxDiff)))
-        (\n c -> if maxDiff-c == 0 
-                 then return Base n
-                 else return (Inductive n (maxDiff-c)))
-        (\n   -> if maxDiff == 0
-                 then return Base n
-                 else return (Inductive n maxDiff))
+        (\m c -> return (Inductive m (c+maxDiff)))
+        (\m c -> return (Inductive m (maxDiff-c)))
+        (\m   -> Base m)
     where
         matchPar plus minus base = case par of
             (SOp n "+" c) -> plus n c
@@ -46,18 +44,19 @@ elabParam par = do
 -- llamado `n`
 maxIdxDiff :: IndexName -> Int -> SProc -> Int
 maxIdxDiff n c sp = foldSProc maxIdxParam c sp
-    where 
-        maxIdxParam (Left (Index _)) acc = acc
-        maxIdxParam (Left (IOp m "+" c)) acc = acc
+    where
+        maxIdxParam (Left (IVar _)) acc = acc
+        maxIdxParam (Left (IVal _)) acc = acc
+        maxIdxParam (Left (IOp _ "+" _)) acc = acc
         maxIdxParam (Left (IOp m "-" c)) acc = if n == m then max c acc else acc
         maxIdxParam (Right (SBase _)) acc = acc
-        maxIdxParam (Right (SOp m "+" c)) acc = acc
+        maxIdxParam (Right (SOp _ "+" _)) acc = acc
         maxIdxParam (Right (SOp m "-" c)) acc = if n == m then max c acc else acc
 
 
-normalizeIdx :: IndexName -> Int -> SProc -> SProc
-normalizeIdx n diff p = go p
-    where 
+normalizeIdxPar :: IndexName -> Int -> SProc -> SProc
+normalizeIdxPar n diff = go
+    where
         go (SInternalChoice       p q) = (SInternalChoice (go p) (go q))
         go (SExternalChoice       p q) = (SExternalChoice (go p) (go q))
         go (SLabeledAlt           p q) = (SLabeledAlt     (go p) (go q))
@@ -66,10 +65,11 @@ normalizeIdx n diff p = go p
         go (SPrefix     (Event m i) q) = (SPrefix (Event m (map normIdx i)) (go q))
         go (SByName (SProcRef m pars)) = (SByName (SProcRef m (map normPar pars)))
         go b = b
-        normIdx (Index m) = if m == n then (IOp m "+" diff) else (Index m)
+        normIdx idx@(IVal  _) = idx
+        normIdx (IVar      m) = if m == n then (IOp m "+" diff) else (IVar m)
         normIdx (IOp m "+" c) = if m == n then (IOp m "+" (c+diff)) else (IOp m "+" c)
-        normIdx (IOp m "-" c) = if m == n 
-            then if diff-c>0 then (IOp m "+" (diff-c)) else (Index m)
+        normIdx (IOp m "-" c) = if m == n
+            then if diff-c>0 then (IOp m "+" (diff-c)) else (IVar m)
             else (IOp m "-" c)
         normPar (SBase m) = if m == n then (SOp m "+" diff) else (SBase m)
         normPar (SOp m "+" c) = if m == n then (SOp m "+" (c+diff)) else (SOp m "+" c)
@@ -80,29 +80,32 @@ normalizeIdx n diff p = go p
 -- `foldSProc f z proc` es identico a `foldr f z (inOrder proc)`
 -- inOrder ignora los operadores y solo devuelve los eventos y
 -- procesos (como eithers)
-foldSProc :: (Either SIndex SProcRef -> b -> b) -> b -> SProc -> b
-foldSProc f z (SInternalChoice p q) = foldSProc f (foldSProc f z q) p 
-foldSProc f z (SExternalChoice p q) = foldSProc f (foldSProc f z q) p
-foldSProc f z (SLabeledAlt p q) = foldSProc f (foldSProc f z q) p
-foldSProc f z (SParallel p q) = foldSProc f (foldSProc f z q) p
-foldSProc f z (SSequential p q) = foldSProc f (foldSProc f z q) p
-foldSProc f z (SPrefix e q) = f (Left e) (foldSProc f z q)
-foldSProc f z (SInterrupt e q) = foldSProc f (foldSProc f z q) p
-foldSProc f z (SByName n) = f (Right n) z
-foldSProc f z SStop = z
-foldSProc f z SSkip = z
+foldSProc :: (Either SIndex SParameter -> b -> b) -> b -> SProc -> b
+foldSProc f z (SInternalChoice       p q) = foldSProc f (foldSProc f z q) p
+foldSProc f z (SExternalChoice       p q) = foldSProc f (foldSProc f z q) p
+foldSProc f z (SLabeledAlt           p q) = foldSProc f (foldSProc f z q) p
+foldSProc f z (SParallel             p q) = foldSProc f (foldSProc f z q) p
+foldSProc f z (SSequential           p q) = foldSProc f (foldSProc f z q) p
+foldSProc f z (SInterrupt            _ q) = foldSProc f (foldSProc f z q) q
+foldSProc f z (SPrefix    (Event _ is) q) = foldr (f . Left) (foldSProc f z q) is
+foldSProc f z (SByName (SProcRef _ pars)) = foldr (f . Right) z pars
+foldSProc _ z SStop = z
+foldSProc _ z SSkip = z
 
-sproc2proc :: SProc -> Proc
-sproc2proc (SInternalChoice       p q) = InternalChoice (sproc2proc p) (sproc2proc q)
-sproc2proc (SExternalChoice       p q) = ExternalChoice (sproc2proc p) (sproc2proc q)
-sproc2proc (SLabeledAlt           p q) = LabeledAlt     (sproc2proc p) (sproc2proc q)
-sproc2proc (SParallel             p q) = Parallel       (sproc2proc p) (sproc2proc q)
-sproc2proc (SSequential           p q) = Sequential     (sproc2proc p) (sproc2proc q)
-sproc2proc (SInterrupt            p q) = Interrupt      (sproc2proc p) (sproc2proc q)
-sproc2proc (SPrefix               e p) = Prefix e p
-sproc2proc (SByName (SProcRef n pars)) = (ByName
-        (ProcRef n (map (\p -> case p of
-                        (SOp m "+" c) -> Inductive m c
-                        (SBase m) -> Base m) pars)))
-sproc2proc                 SStop = Stop
-sproc2proc                 SSkip = Skip
+shallowElabProc :: SProc -> Proc
+shallowElabProc = go
+    where
+        go (SInternalChoice          p q) = InternalChoice (go p) (go q)
+        go (SExternalChoice          p q) = ExternalChoice (go p) (go q)
+        go (SLabeledAlt              p q) = LabeledAlt     (go p) (go q)
+        go (SParallel                p q) = Parallel       (go p) (go q)
+        go (SSequential              p q) = Sequential     (go p) (go q)
+        go (SInterrupt               p q) = Interrupt      (go p) (go q)
+        go (SPrefix                  e p) = Prefix e (go p)
+        go pr@(SByName (SProcRef n pars)) = ByName (ProcRef n (map (shallowElabPar pr) pars))
+        go                          SStop = Stop
+        go                          SSkip = Skip
+        shallowElabPar pr p = case p of
+            (SOp m "+" c) -> Inductive m c
+            (SBase m) -> Base m
+            _ -> error ("Fallo en la elaboracion del proceso " ++ (show pr))
