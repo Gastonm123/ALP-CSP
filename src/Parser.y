@@ -43,6 +43,7 @@ import Lexer
   WORD       { TokenWORD $$ }
   word       { TokenWord $$ }
   Number     { TokenNumber $$ }
+  Char       { TokenChar $$ }
 
 %left '||' ';'
 %left '/\\'
@@ -75,7 +76,7 @@ Params :: { [SParamater] }
 Param  :: { SParamater }
        : word BinOp Number       { SOp $1 $2 $3 }
        | word                    { SBase $1 }
-       | ( Param )               { $2 }
+       | '(' Param ')'               { $2 }
 
 Events :: { [SEvent] }
        : Event Events           { $1 : $2 }
@@ -88,9 +89,10 @@ Event :: { SEvent }
       | word                    { SEvent $1 [] }
 
 Index :: { SIndex }
-      : word BinOp number       { IOp $1 $2 $3 }
+      : word BinOp Number       { IOp $1 $2 $3 }
       | word                    { Index $1 }
-      | ( Index )               { $2 }
+      | Char                    { Index $1 }
+      | '(' Index ')'               { $2 }
 
 Indices :: { [SIndex] }
         : Index '.' Indices     { $1 : $3 }
@@ -99,8 +101,8 @@ Indices :: { [SIndex] }
         | Index                 { $1 }
 
 ValuedIndices :: { [Index] }
-              : num '.' ValuedIndices { (Index $1) : $3 }
-              | num                   { [Index $1] }
+              : Number '.' ValuedIndices { (Index $1) : $3 }
+              | Number                   { [Index $1] }
 
 Sentences :: { [SSentence] }
           : Sentence Sentences    { $1 : $2 }

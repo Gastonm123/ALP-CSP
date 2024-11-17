@@ -7,6 +7,7 @@ import           System.Console.GetOpt
 import qualified System.Environment            as Env
 import           Lang
 import           Parser
+import           Elab
 
 import           Prettyprinter -- Doc
 import           Prettyprinter.Render.Terminal  (AnsiStyle)
@@ -68,10 +69,13 @@ runOptions fp opts
     s <- readFile fp
     case parseFile s 0 of
       Failed error -> print (pretty error)
-      Ok prog -> if
-        | optAST opts       -> print prog
-        | optPrint opts     -> do
-            let hangPrint :: Sentence -> Doc AnsiStyle
-                hangPrint p = hang 4 (prettyPrint (SentG p))
-            print (vcat (map hangPrint prog))
-        | otherwise -> error "optHelp ya fue matcheado"
+      Ok prog -> let 
+        eprog = elabProg prog
+        in if
+          | optAST opts       -> print prog
+          | optPrint opts     -> {-do
+              let hangPrint :: Sentence -> Doc AnsiStyle
+                  hangPrint p = hang 4 (prettyPrint (SentG p))
+              print (vcat (map hangPrint prog)) -}
+              return ()
+          | otherwise -> error "optHelp ya fue matcheado"

@@ -35,6 +35,7 @@ lexer cont s = case s of
     ('?':cs) -> cont TokenQuestion cs
     ('+':cs) -> cont (TokenBinOp "+") cs
     ('-':cs) -> cont (TokenBinOp "-") cs
+    ('"':(c:('"':cs))) -> cont (TokenChar c) cs
     unknown -> failPos ("No se puede reconocer " ++ take 10 unknown ++ "...")
     where
         lexWord cs = case span isAlpha cs of
@@ -89,4 +90,5 @@ data Token
   | TokenWORD String
   | TokenNumber Int
   | TokenBinOp String
+  | TokenChar Char
   deriving (Eq, Show)
