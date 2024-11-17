@@ -1,5 +1,5 @@
 {-# LANGUAGE GADTs #-}
-module Lang (Val(..), SProg(..), SIndex, SSentence(..), BinOp, SParameter(..), SProcRef(..), SProc(..), SEvent, ProcRef(..), Parameter(..), Event(..), Index(..), Proc (..), Sentence (..), Generic (..), Prog (..)) where
+module Lang (Val(..), SProg(..), SIndex, SSentence(..), BinOp, SParameter(..), SProcRef(..), SProc(..), SEvent, ProcRef(..), Parameter(..), Event(..), Index(..), Proc (..), Sentence (..), Prog (..)) where
 import Data.List (intercalate)
 
 -- Programa
@@ -9,13 +9,6 @@ data Prog =
     events :: [Event]
   }
 
--- Parametros de un proceso. Un parametro puede ser
--- inductivo o definir una referencia a un valor fijo
-data Parameter
-  = Inductive String Int -- es inductivo si tiene una variable
-                         -- (n, n+1, n+2, etc.)
-  | Base Int
-
 -- Referencias a procesos
 data ProcRef
   = ProcRef {
@@ -24,16 +17,6 @@ data ProcRef
   }
 
 -- Eventos
-data Val
-  = Char Char
-  | Int Int
-  deriving Show
-
-data Index
-  = IVal Val
-  | IVar String
-  | IOp String BinOp Int
-
 data Event =
   Event {
     eventName :: String,
@@ -60,21 +43,46 @@ data Sentence
   deriving Show
 
 
+-- Parametros de un proceso. Un parametro puede ser
+-- inductivo o definir una referencia a un valor fijo
+data Parameter
+  = Inductive String Int -- es inductivo si tiene una variable
+                         -- (n, n+1, n+2, etc.)
+  | Base Int
+
+-- Indices
+data Index
+  = IVal Val
+  | IVar String
+  | IOp String BinOp Int
+
+-- Valores de los indices
+data Val
+  = Char Char
+  | Int Int
+  deriving Show
+
+
+
 -- Syntax sugaring
-type BinOp = String
-data SParameter 
-  = SOp String BinOp Int
-  | SBase Int
-  
+-- Programa azucarado
+data SProg =
+  SProg {
+    ssentences :: [SSentence],
+    sevents :: [Event]
+  }
+
+-- Referencias a procesos azucaradas
 data SProcRef =
   SProcRef {
     sprocName :: String,
     sparams   :: [SParameter]
   }
 
-type SIndex = Index
+-- Eventos azucarados
 type SEvent = Event
 
+-- Procesos azucarados
 data SProc
   = SInternalChoice SProc SProc
   | SExternalChoice SProc SProc
@@ -88,19 +96,26 @@ data SProc
   | SSkip
   deriving Show
 
+-- Sentencias azucaradas
 data SSentence
   = SAssign SProcRef SProc
   deriving Show
+  
+-- Parametros azucarados
+data SParameter
+  = SOp String BinOp Int
+  | SBase Int
 
-data SProg =
-  SProg {
-    ssentences :: [SSentence],
-    sevents :: [Event]
-  }
+-- Indices azucarados
+type SIndex = Index
+
+-- Otros
+type BinOp = String
+
 
 -- DEPRECATED
 -- Generic container
-data Generic = SentG Sentence | ProcG Proc | Error String deriving Show -- similar a un OR
+-- data Generic = SentG Sentence | ProcG Proc | Error String deriving Show -- similar a un OR
 
 
 instance Show Parameter where
