@@ -72,7 +72,7 @@ runOptions fp opts
       Ok prog -> let 
         eprog = elabProg prog
         in if
-          | optAST opts       -> print prog
+          | optAST opts       -> print eprog
           | optPrint opts     -> {-do
               let hangPrint :: Sentence -> Doc AnsiStyle
                   hangPrint p = hang 4 (prettyPrint (SentG p))

@@ -2,7 +2,7 @@
 module Lexer (lexer, Token(..)) where
 
 import Lang ()
-import ParserMonad ( P, failPos, ParseResult )
+import ParserMonad ( P, failPos, ParseResult, failPos' )
 import Data.Char ( isNumber, isAlpha, isSpace, isLower, isUpper )
 
 lexer :: (Token -> P a) -> P a
@@ -16,7 +16,7 @@ lexer cont s = case s of
     ('.':cs) -> cont TokenDot cs
     ('-':('-':cs)) -> lexer cont $ dropWhile ('\n' /=) cs
     ('{':('-':cs)) -> consumirBK 0 0 cs
-    ('-':('}':cs)) -> failPos "Comentario no abierto"
+    ('-':('}':cs)) -> failPos' "Comentario no abierto"
     ('-':('>':cs)) -> cont TokenArrow cs
     ('/':('\\':cs))-> cont TokenInterrupt cs
     ('(':cs) -> cont TokenOpenBrack cs
@@ -27,7 +27,7 @@ lexer cont s = case s of
     ('|':cs) -> cont TokenLabeledAlternative cs
     (';':cs) -> cont TokenSequential cs
     ('=':('=':cs)) -> maybe
-            (failPos "Se esperaba un separador")
+            (failPos' "Se esperaba un separador")
             (cont TokenSeparator)
             (consumirSep cs)
     ('=':cs) -> cont TokenAssign cs
@@ -36,7 +36,7 @@ lexer cont s = case s of
     ('+':cs) -> cont (TokenBinOp "+") cs
     ('-':cs) -> cont (TokenBinOp "-") cs
     ('"':(c:('"':cs))) -> cont (TokenChar c) cs
-    unknown -> failPos ("No se puede reconocer " ++ take 10 unknown ++ "...")
+    unknown -> failPos' ("No se puede reconocer " ++ take 10 unknown ++ "...")
     where
         lexWord cs = case span isAlpha cs of
             ("STOP", rest) -> cont TokenStop rest
@@ -45,7 +45,7 @@ lexer cont s = case s of
                 then cont (TokenWORD name) rest
                 else if all isLower name
                 then cont (TokenWord name) rest
-                else failPos "Se esperaba un evento, un proceso o un indice"
+                else failPos' "Se esperaba un evento, un proceso o un indice"
         lexNumber cs = case span isNumber cs of
             (number, rest) -> cont (TokenNumber (read number)) rest
         consumirBK anidado cl cs = case cs of

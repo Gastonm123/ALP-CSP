@@ -16,29 +16,24 @@ elabSent (SAssign pRef p) = let
     pars = sparams pRef
     name = sprocName pRef
     (normParams, normP) = runState (mapM elabParam pars) p
-    in (Assign (ProcRef name normParams) (shallowElabProc normP))
+    in (Assign (ProcRef name normParams) (directElabProc normP))
 
 type IndexName = String
 
 elabParam :: SParameter -> State SProc Parameter
 elabParam par = do
     p' <- get
-    let maxDiff = matchPar
-            (\n _ -> maxIdxDiff n 0 p')
-            (\n c -> maxIdxDiff n c p')
-            (\n   -> maxIdxDiff n 0 p')
-    let n = matchPar const const id
-    when (maxDiff > 0) (put (normalizeIdxPar n maxDiff p'))
-    matchPar
-        (\m c -> return (Inductive m (c+maxDiff)))
-        (\m c -> return (Inductive m (maxDiff-c)))
-        (\m   -> Base m)
-    where
-        matchPar plus minus base = case par of
-            (SOp n "+" c) -> plus n c
-            (SOp n "-" c) -> minus n c
-            (SBase n) -> base n
-            _ -> error ("Parametro con operador invalido: " ++ show par)
+    case par of
+        (SOp m "+" c) -> do
+            let maxDiff = maxIdxDiff m 0 p'
+            when (maxDiff > 0) (put (normalizeIdxPar m maxDiff p'))
+            return (Inductive m (c+maxDiff))
+        (SOp m "-" c) -> do
+            let maxDiff = maxIdxDiff m c p'
+            when (maxDiff > 0) (put (normalizeIdxPar m maxDiff p'))
+            return (Inductive m (maxDiff-c))
+        (SBase n) -> return (Base n)
+        _ -> error ("Parametro con operador invalido: " ++ show par)
 
 -- calcula el mayor natural que se resta a cualquier indice o parametro
 -- llamado `n`
@@ -71,10 +66,10 @@ normalizeIdxPar n diff = go
         normIdx (IOp m "-" c) = if m == n
             then if diff-c>0 then (IOp m "+" (diff-c)) else (IVar m)
             else (IOp m "-" c)
-        normPar (SBase m) = if m == n then (SOp m "+" diff) else (SBase m)
+        normPar (SBase m) = (SBase m)
         normPar (SOp m "+" c) = if m == n then (SOp m "+" (c+diff)) else (SOp m "+" c)
         normPar (SOp m "-" c) = if m == n
-            then if diff-c>0 then (SOp m "+" (diff-c)) else (SBase m)
+            then (SOp m "+" (diff-c))
             else (SOp m "-" c)
 
 -- `foldSProc f z proc` es identico a `foldr f z (inOrder proc)`
@@ -92,20 +87,20 @@ foldSProc f z (SByName (SProcRef _ pars)) = foldr (f . Right) z pars
 foldSProc _ z SStop = z
 foldSProc _ z SSkip = z
 
-shallowElabProc :: SProc -> Proc
-shallowElabProc = go
+directElabProc :: SProc -> Proc
+directElabProc = go
     where
-        go (SInternalChoice          p q) = InternalChoice (go p) (go q)
-        go (SExternalChoice          p q) = ExternalChoice (go p) (go q)
-        go (SLabeledAlt              p q) = LabeledAlt     (go p) (go q)
-        go (SParallel                p q) = Parallel       (go p) (go q)
-        go (SSequential              p q) = Sequential     (go p) (go q)
-        go (SInterrupt               p q) = Interrupt      (go p) (go q)
-        go (SPrefix                  e p) = Prefix e (go p)
-        go pr@(SByName (SProcRef n pars)) = ByName (ProcRef n (map (shallowElabPar pr) pars))
-        go                          SStop = Stop
-        go                          SSkip = Skip
-        shallowElabPar pr p = case p of
+        go (SInternalChoice       p q) = InternalChoice (go p) (go q)
+        go (SExternalChoice       p q) = ExternalChoice (go p) (go q)
+        go (SLabeledAlt           p q) = LabeledAlt     (go p) (go q)
+        go (SParallel             p q) = Parallel       (go p) (go q)
+        go (SSequential           p q) = Sequential     (go p) (go q)
+        go (SInterrupt            p q) = Interrupt      (go p) (go q)
+        go (SPrefix               e p) = Prefix e (go p)
+        go (SByName (SProcRef n pars)) = ByName (ProcRef n (map shallowElabPar pars))
+        go                       SStop = Stop
+        go                       SSkip = Skip
+        shallowElabPar p = case p of
             (SOp m "+" c) -> Inductive m c
             (SBase m) -> Base m
-            _ -> error ("Fallo en la elaboracion del proceso " ++ (show pr))
+            _ -> error ("Parametro invalido: " ++ show p)

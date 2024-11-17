@@ -1,6 +1,13 @@
 {-# LANGUAGE GADTs #-}
-module Lang (SProg(..), SIndex, SSentence(..), BinOp, SParameter(..), SProcRef(..), SProc(..), SEvent, ProcRef(..), Parameter(..), Event(..), Index(..), Proc (..), Sentence (..), Generic (..), Prog (..)) where
+module Lang (Val(..), SProg(..), SIndex, SSentence(..), BinOp, SParameter(..), SProcRef(..), SProc(..), SEvent, ProcRef(..), Parameter(..), Event(..), Index(..), Proc (..), Sentence (..), Generic (..), Prog (..)) where
 import Data.List (intercalate)
+
+-- Programa
+data Prog = 
+  Prog {
+    sentences :: [Sentence],
+    events :: [Event]
+  }
 
 -- Parametros de un proceso. Un parametro puede ser
 -- inductivo o definir una referencia a un valor fijo
@@ -51,13 +58,6 @@ data Proc
 data Sentence
   = Assign ProcRef Proc
   deriving Show
-
--- Programa
-data Prog = 
-  Prog {
-    sentences :: [Sentence],
-    events :: [Event]
-  }
 
 
 -- Syntax sugaring
@@ -120,7 +120,10 @@ instance Show Event where
 
 instance Show SParameter where
   show (SOp n op c) = n ++ op ++ show c
-  show (SBase n) = n
+  show (SBase n) = show n
 
 instance Show SProcRef where
   show (SProcRef n p) = if not (null p) then n ++ "." ++ intercalate "." (map show p) else n
+
+instance Show Prog where
+  show _ = "working on it......."

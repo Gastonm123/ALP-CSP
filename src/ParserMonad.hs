@@ -1,6 +1,6 @@
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# HLINT ignore "Redundant lambda" #-}
-module ParserMonad (ParseResult(..), P, thenP, returnP, failP, catchP, parseError, failPos) where
+module ParserMonad (ParseResult(..), P, thenP, returnP, failP, catchP, parseError, failPos, failPos') where
   
 data ParseResult a = Ok a | Failed String deriving Show
 type LineNumber = Int
@@ -18,8 +18,11 @@ returnP a = \_ _ -> Ok a
 failP :: String -> P a
 failP err = \_ _ -> Failed err
 
-failPos :: String -> LineNumber -> ParseResult a
-failPos err = \line -> Failed $ "Linea " ++ show line ++ ": " ++ err
+failPos :: String -> P a
+failPos err = \line _ -> Failed $ "Linea " ++ show line ++ ": " ++ err
+
+failPos' :: String -> LineNumber -> ParseResult a
+failPos' err = \line -> Failed $ "Linea " ++ show line ++ ": " ++ err
 
 catchP :: P a -> (String -> P a) -> P a
 catchP m k = \s l ->
