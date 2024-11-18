@@ -25,17 +25,17 @@ S = UN_LADO.1 || UN_LADO.2
 PUERTA.1 = sensor_persona.1 -> puerta_abrir.1 -> sensor_nadie.1 -> puerta_cerrar.1 -> PUERTA.1
 PUERTA.2 = sensor_persona.2 -> puerta_abrir.2 -> sensor_nadie.2 -> puerta_cerrar.2 -> PUERTA.2
 
-ARB = puerta_abrir.1 -> puerta_abrir -> ARB10
-    | puerta_abrir.2 -> puerta_abrir -> ARB01
+ARB = puerta_abrir.1 -> puerta_abrir -> ARB.10
+    | puerta_abrir.2 -> puerta_abrir -> ARB.01
 
-ARB10 = puerta_cerrar.1 -> puerta_cerrar -> ARB
-      | puerta_abrir.2 -> ARB11
+ARB.10 = puerta_cerrar.1 -> puerta_cerrar -> ARB
+       | puerta_abrir.2 -> ARB.11
 
-ARB01 = puerta_cerrar.2 -> puerta_cerrar -> ARB
-      | puerta_abrir.1 -> ARB11
+ARB.01 = puerta_cerrar.2 -> puerta_cerrar -> ARB
+       | puerta_abrir.1 -> ARB.11
 
-ARB11 = puerta_cerrar.1 -> ARB01
-      | puerta_cerrar.2 -> ARB10
+ARB.11 = puerta_cerrar.1 -> ARB.01
+       | puerta_cerrar.2 -> ARB.10
 
 S = UN_LADO.1 || UN_LADO.2 || ARB
 
