@@ -1,6 +1,6 @@
 all: build
 
-build: $(HS_FILES) .FORCE
+build: $(HS_FILES)
 	cabal build
 
 test: build .FORCE

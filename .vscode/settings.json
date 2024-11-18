@@ -9,10 +9,11 @@
         "**/*.crswap": true,
         "**/.stack-work": true,
         "**/dist-newstyle": true,
-        "**/stack.yaml": false,
-        "**/package.yaml": false,
-        "**/CSP-stack.cabal": false,
-        "**/stack.yaml.lock": false,
+        "**/stack.yaml": true,
+        "**/package.yaml": true,
+        "**/CSP-stack.cabal": true,
+        "**/stack.yaml.lock": true,
+        "**/Setup.hs": true,
         "**/hie.yaml": true
     }
 }
