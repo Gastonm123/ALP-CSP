@@ -62,19 +62,20 @@ Trace  :: { [Event] }
        | {- empty -}            { [] }
 
 TraceEv :: { Event }
-        : word '.' ValuedIndices  { Event $1 $3 }
+        : word '.' TraceIndices   { Event $1 $3 }
         | word                    { Event $1 [] }
 
 ProcRef :: { SProcRef }
-        : WORD '.' Params        { SProcRef $1 $3 }
-        | WORD                   { SProcRef $1 [] }
+        : WORD                   { SProcRef $1 [] }
+        | WORD '.' Params        { SProcRef $1 $3 }
 
 Params :: { [SParameter] }
-       : Param '.' Params        { $1 : $3 }
-       | Param                   { [$1] }
+       : Param                   { [$1] }
+       | Param '.' Params        { $1 : $3 }
 
 Param  :: { SParameter }
-       : word BinOp Number       { SOp $1 $2 $3 }
+       : word                    { SOp $1 "+" 0 }
+       | word BinOp Number       { SOp $1 $2 $3 }
        | Number                  { SBase $1 }
        | '(' Param ')'               { $2 }
 
@@ -96,23 +97,32 @@ Index :: { SIndex }
       | '(' Index ')'           { $2 }
 
 Indices :: { [SIndex] }
-        : Index '.' Indices     { $1 : $3 }
-        | Index '!' Index       { $1 : [$3] }
+        : Index '!' Index       { $1 : [$3] }
+        | Index '.' Indices     { $1 : $3 }
         | Index '?' Index       { $1 : [$3] }
         | Index                 { [$1] }
 
-ValuedIndices :: { [Index] }
-              : Number '.' ValuedIndices { (IVal (Int $1)) : $3 }
-              | Number                   { [IVal (Int $1)] }
-              | Char '.' ValuedIndices   { (IVal (Char $1)) : $3 }
-              | Char                     { [IVal (Char $1)] }
+{- Los indices de una traza (TraceIndices) deben ser, o completamente 
+  valuados, o con a lo sumo un parametro en un canal receive ('?').
+  Puede ser util un parametro en un canal receive para aceptar cualquier
+  valor que produzca el sistema; parecido a un scanf del resultado.
+-}
+TraceIndices :: { [Index] }
+              : Number '.' TraceIndices { (IVal (Int $1)) : $3 }
+              | Number '!' TraceIndices { (IVal (Int $1)) : $3 }
+              | Number '?' Index        { (IVal (Int $1)) : [$3] }
+              | Number                  { [IVal (Int $1)] }
+              | Char '.' TraceIndices   { (IVal (Char $1)) : $3 }
+              | Char '!' TraceIndices   { (IVal (Char $1)) : $3 }
+              | Char '?' Index          { (IVal (Char $1)) : [$3] }
+              | Char                    { [IVal (Char $1)] }
 
 Sentences :: { [SSentence] }
-          : Sentence Sentences    { $1 : $2 }
-          | Sentence              { [$1] }
+          : Sentence              { [$1] }
+          | Sentence Sentences    { $1 : $2 }
 
 Sentence :: { SSentence }
-         : ProcRef '=' Proc   { SAssign $1 $3 }
+         : ProcRef '=' Proc       { SAssign $1 $3 }
 
 Proc :: { SProc }
      : Event '->' Proc           { SPrefix $1 $3 }

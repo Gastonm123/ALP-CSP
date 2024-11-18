@@ -4,15 +4,16 @@ module Lexer (lexer, Token(..)) where
 import Lang ()
 import ParserMonad ( P, failPos, ParseResult, failPos' )
 import Data.Char ( isNumber, isAlpha, isSpace, isLower, isUpper )
+import Debug.Trace (trace)
 
 lexer :: (Token -> P a) -> P a
-lexer cont s = case s of
+lexer cont s = {-trace (take 10 s) $-} case s of
     [] -> cont TokenEOF []
     ('\n':cs) -> \line -> lexer cont cs (line + 1)
     (c:cs)
-        | isSpace c -> lexer cont cs
-        | isAlpha c -> lexWord (c:cs)
-        | isNumber c -> lexNumber (c:cs)
+        | isSpace c -> {-trace "1" $-} lexer cont cs
+        | isAlpha c -> {-trace "2" $-} lexWord (c:cs)
+        | isNumber c -> {-trace "3" $-} lexNumber (c:cs)
     ('.':cs) -> cont TokenDot cs
     ('-':('-':cs)) -> lexer cont $ dropWhile ('\n' /=) cs
     ('{':('-':cs)) -> consumirBK 0 0 cs
@@ -36,16 +37,21 @@ lexer cont s = case s of
     ('+':cs) -> cont (TokenBinOp "+") cs
     ('-':cs) -> cont (TokenBinOp "-") cs
     ('"':(c:('"':cs))) -> cont (TokenChar c) cs
+    ('"':('\\':(c:('"':cs)))) -> maybe
+            (failPos' ("Sequencia de escape invalida (\\"++[c]++")"))
+            (\esc -> cont (TokenChar esc) cs)
+            (escapeSeq c)
     unknown -> failPos' ("No se puede reconocer " ++ take 10 unknown ++ "...")
     where
-        lexWord cs = case span isAlpha cs of
+        lexWord cs = case span (includeUnderscore isAlpha) cs of
             ("STOP", rest) -> cont TokenStop rest
             ("SKIP", rest) -> cont TokenSkip rest
-            (name, rest) -> if all isUpper name 
+            (name, rest) -> {-trace name $-}
+                if all (includeUnderscore isUpper) name
                 then cont (TokenWORD name) rest
-                else if all isLower name
+                else if all (includeUnderscore isLower) name
                 then cont (TokenWord name) rest
-                else failPos' "Se esperaba un evento, un proceso o un indice"
+                else {-trace name-} failPos' "Se esperaba un evento, proceso o indice"
         lexNumber cs = case span isNumber cs of
             (number, rest) -> cont (TokenNumber (read number)) rest
         consumirBK anidado cl cs = case cs of
@@ -69,6 +75,7 @@ lexer cont s = case s of
             case dropWhile (== ' ') c2 of
                 ('=':('=':c3)) -> Just (dropWhile (== '=') c3)
                 _ -> Nothing
+        includeUnderscore p c = p c || c == '_'
 
 data Token
   = TokenStop
@@ -94,3 +101,18 @@ data Token
   | TokenBinOp String
   | TokenChar Char
   deriving (Eq, Show)
+
+escapeSeq :: Char -> Maybe Char
+escapeSeq c = case c of
+    'a' -> Just '\a'
+    'b' -> Just '\b'
+    'f' -> Just '\f'
+    'n' -> Just '\n'
+    'r' -> Just '\r'
+    't' -> Just '\t'
+    'v' -> Just '\v'
+    '0' -> Just '\0'
+    '\'' -> Just '\''
+    '\"' -> Just '\"'
+    '\\' -> Just '\\'
+    _ -> Nothing

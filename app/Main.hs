@@ -67,7 +67,7 @@ runOptions fp opts
   | optHelp opts = putStrLn (usageInfo "Uso: " options)
   | otherwise = do
     s <- readFile fp
-    case parseFile s 0 of
+    case parseFile s 1 of
       Failed error -> print (pretty error)
       Ok prog -> let 
         eprog = elabProg prog
