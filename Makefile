@@ -11,6 +11,7 @@ test: build .FORCE
 	cabal run CSP-stack-exe -- examples/SesionWeb.csp -a
 	cabal run CSP-stack-exe -- examples/Supermercado.csp -a
 	cabal run CSP-stack-exe -- examples/Defectuoso.csp -a
+	cabal run CSP-stack-exe -- examples/Interruptor.csp -a
 
 HS_FILES := $(wildcard src/*.hs)
 

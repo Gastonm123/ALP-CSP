@@ -11,7 +11,7 @@
         "**/dist-newstyle": true,
         "**/stack.yaml": true,
         "**/package.yaml": true,
-        "**/CSP-stack.cabal": true,
+        "**/CSP-stack.cabal": false,
         "**/stack.yaml.lock": true,
         "**/Setup.hs": true,
         "**/hie.yaml": true
