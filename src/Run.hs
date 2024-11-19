@@ -29,6 +29,8 @@ type MonadRun = WriterT [Event] (ExceptT String (Reader RunData))
 newtype TraceEvent = TraceEvent { deTraceEvent :: Event }
 
 -- Acciones de la monada
+-- La referencia que se busca DEBE tener todos los parametros con valor.
+-- Si todas las sentencias son cerradas entonces podemos asegurarlo.
 getProc :: ProcRef -> MonadRun Proc
 getProc pRef = do
     sents <- asks rSentences
@@ -37,6 +39,36 @@ getProc pRef = do
         [s] -> let (Assign _ p) = s in return p
         (_:_) -> throwError ("El proceso"++show pRef++" es ambiguo.")
         []    -> throwError ("El proceso "++show pRef++" no esta definido.")
+    where
+        matchRefInSent p (Assign q _) =
+            if  (procName p == procName q) &&
+                (length (params p) == length (params q))
+            then ()
+            else ()
+        matchParams :: [Parameter] -> [Parameter] -> Writer [Parameter] Bool
+        matchParams [Base v1] [Base v2] = 
+            if (v1 == v2) then
+                return True
+            else
+                return False
+        matchParams [Base v1] [Inductive _ c] =
+            if v1 - c >= 0 then do
+                tell [Base (v1-c)]
+                return True
+            else
+                return False
+        matchParams ((Base v1):is1) ((Base v2):is2) = 
+            if (v1 == v2) then 
+                matchParams is1 is2
+            else
+                return False
+        matchParams ((Base v1):is1) ((Inductive _ c):is2) =
+            if v1 - c >= 0 then do
+                tell [Base (v1-c)]
+                matchParams is1 is2
+            else
+                return False
+        matchParams _ _ = return False
 
 -- InternalChoice con ocultacion de eventos tendria algo de significado
 -- porque el procedimiento automatico eligiría uno de los procesos y lo
@@ -68,7 +100,8 @@ accept alt@(LabeledAlt p q) = do
         (Nothing, Nothing) -> return Nothing
         (Just _, Just _) -> do
             ev <- asks rEvent
-            throwError ("El evento "++show ev++" fue aceptado mas de una vez en una alternativa: "++show alt)
+            throwError ("El evento "++show ev++" fue aceptado mas de una vez"++
+                " en una alternativa: "++show alt)
 accept (Sequential Skip q) = accept q
 accept (Sequential p q) = do
     nextp <- accept p
@@ -84,7 +117,8 @@ accept int@(Interrupt p q) = do
         (Nothing, Nothing) -> return Nothing
         (Just _, Just _) -> do
             ev <- asks rEvent
-            throwError ("El evento "++show ev++" fue aceptado mas de una vez en una interrupcion: "++show int)
+            throwError ("El evento "++show ev++" fue aceptado mas de una vez"++
+                " en una interrupcion: "++show int)
 accept (ByName n) = getProc n >>= accept
 accept Stop = return Nothing
 accept Skip = return Nothing
@@ -111,7 +145,7 @@ accept (Parallel p q) = do
                 else return (Just (Parallel p q'))
         (Just p', Just q') -> return (Just (Parallel p' q'))
 
--- Checks
+-- Utilidades
 
 inAlpha :: Event -> Proc -> MonadRun Bool
 inAlpha e p = evalStateT (inAlpha' e p) []
@@ -119,23 +153,83 @@ inAlpha e p = evalStateT (inAlpha' e p) []
 inAlpha' :: Event -> Proc -> StateT [ProcRef] MonadRun Bool
 inAlpha' e = go
     where
-        go (InternalChoice p q) = (go p) >>= (\x -> if x then return True else go q)
-        go (ExternalChoice p q) = (go p) >>= (\x -> if x then return True else go q)
-        go (Parallel       p q) = (go p) >>= (\x -> if x then return True else go q)
-        go (Sequential     p q) = (go p) >>= (\x -> if x then return True else go q)
-        go (Interrupt      p q) = (go p) >>= (\x -> if x then return True else go q)
-        go (LabeledAlt     p q) = (go p) >>= (\x -> if x then return True else go q)
+        go (InternalChoice p q) = bin p q
+        go (ExternalChoice p q) = bin p q
+        go (Parallel       p q) = bin p q
+        go (Sequential     p q) = bin p q
+        go (Interrupt      p q) = bin p q
+        go (LabeledAlt     p q) = bin p q
         go Skip                 = return False
         go Stop                 = return False
-        go (Prefix        e1 q) = if matchEvents e e1 then return True else (go q)
+        --
+        go (Prefix        e1 q) =
+            if matchEvents e e1 then
+                return True
+            else
+                go q
         go (ByName           n) = do
             seen <- get
-            if member n seen
-                then return False
-                else do
-                    put (n:seen)
-                    p <- lift (getProc n)
-                    go p
+            if member n seen then
+                return False
+            else do
+                put (n:seen)
+                p <- lift (getProc n)
+                go p
+        bin p q = do
+            x <- (go p)
+            if x then
+                return True
+            else
+                go q
+
+-- SIEMPRE se matchea una traza contra un evento de especificacion
+-- los eventos de las trazas tienen todos los indices valuados.
+-- El resultado de matchear incluye el reemplazo de las variables
+-- en el evento
+-- 
+matchEvents :: TraceEvent -> Event -> (Bool, [Index])
+matchEvents (TraceEvent e1) e2 = 
+    if  (eventName e1 == eventName e2) &&
+        (length (indices e1) == length (indices e2))
+    then runWriter (matchIndices (indices e1) (indices e2))
+    else (False, [])
+    where
+        matchIndices :: [Index] -> [Index] -> Writer [Index] Bool
+        matchIndices [IVal v1] [IVal v2] = 
+            if (v1 == v2) then
+                return True
+            else
+                return False
+        matchIndices [IVal v1] [IVar _] = do
+            tell [IVal v1]
+            return True
+        matchIndices [IVal (Int v1)] [IOp _ "+" c] =
+            if v1 - c >= 0 then do
+                tell [IVal (Int (v1-c))]
+                return True
+            else
+                return False
+        matchIndices ((IVal v1):is1) ((IVal v2):is2) = 
+            if (v1 == v2) then 
+                matchIndices is1 is2
+            else
+                return False
+        matchIndices ((IVal v1):is1) ((IVar _):is2) = do
+            tell [IVal v1]
+            matchIndices is1 is2
+        matchIndices ((IVal (Int v1)):is1) ((IOp _ "+" c):is2) =
+            if v1 - c >= 0 then do
+                tell [IVal (Int (v1-c))]
+                matchIndices is1 is2
+            else
+                return False
+        matchIndices _ _ = return False
+
+-- Checks estaticos
+
+-- Check que no hay ninguna parte de la sentencia con variables libres
+checkClosed :: Sentence -> Bool
+checkClosed s = False
 
 -- Check que todas las alternativas son deterministas: Ninguna comparte eventos
 checkLabeledAlt :: Proc -> Except String Bool
@@ -158,52 +252,14 @@ checkLabeledAlt = checkLA
             case (evsP, evsQ) of
                 (Just evsP1, Just evsQ1) ->
                     let shared = any (`elem` evsQ1) evsP1 -- O(n^2). mejorar?
-                    in if shared then return Nothing else return (Just (evsP1++evsQ1))
+                    in if shared 
+                        then return Nothing
+                        else return (Just (evsP1++evsQ1))
                 (_, _) -> return Nothing
         collectEvents (Prefix e _) = return (Just [e])
-        collectEvents p = throwError ("Se esperaba un prefijo o alternativa etiquetada, pero se encontro "++show p)
+        collectEvents p = throwError ("Se esperaba un prefijo o alternativa"++
+            " etiquetada, pero se encontro "++show p)
         combine p q = do
             vp <- p
             vq <- q
             return (vp && vq)
-
--- SIEMPRE se matchea una traza contra un evento de especificacion
--- los eventos de las trazas tienen todos los indices valuados, salvo
--- posiblemente, el ultimo, que puede ser un parametro
--- 
-matchEvents :: TraceEvent -> Event -> (Bool, Event)
-matchEvents (TraceEvent e1) e2 = 
-    (eventName e1 == eventName e2) &&
-    (length (indices e1) == length (indices e2)) &&
-    matchIndices (indices e1) (indices e2)
-    where
-        matchIndices :: [Index] -> [Index] -> Writer [Index] Bool
-        matchIndices [IVar _] [IVal v2] = do
-            tell [IVal v2]
-            return True
-        matchIndices [IOp _ "+" c] [IVal (Int v2)] =
-            if v2 - c >= 0 then do
-                tell [IVal (Int (v2-c))]
-                return True
-            else
-                return False
-        matchIndices [IVal v1] [IVal v2] = 
-            if (v1 == v2) then
-                return True
-            else
-                return False
-        matchIndices ((IVal v1):is1) ((IVal v2):is2) = 
-            if (v1 == v2) then 
-                matchIndices is1 is2
-            else
-                return False
-        matchIndices ((IVar _):is1) ((IVal v2):is2) = do
-            tell [IVal v2]
-            matchIndices is1 is2
-        matchIndices ((IOp _ "+" c):is1) ((IVal (Int v2)):is2) =
-            if v2 - c >= 0 then do
-                tell [IVal (Int (vs-c))]
-                matchIndices is1 is2
-            else
-                return False
-        matchIndices _ _ = undefined

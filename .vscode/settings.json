@@ -15,5 +15,6 @@
         "**/stack.yaml.lock": true,
         "**/Setup.hs": true,
         "**/hie.yaml": true
-    }
+    },
+    "editor.rulers": [80]
 }
