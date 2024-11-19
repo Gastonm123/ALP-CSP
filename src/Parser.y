@@ -102,19 +102,14 @@ Indices :: { [SIndex] }
         | Index '?' Index       { $1 : [$3] }
         | Index                 { [$1] }
 
-{- Los indices de una traza (TraceIndices) deben ser, o completamente 
-  valuados, o con a lo sumo un parametro en un canal receive ('?').
-  Puede ser util un parametro en un canal receive para aceptar cualquier
-  valor que produzca el sistema; parecido a un scanf del resultado.
--}
 TraceIndices :: { [Index] }
               : Number '.' TraceIndices { (IVal (Int $1)) : $3 }
               | Number '!' TraceIndices { (IVal (Int $1)) : $3 }
-              | Number '?' Index        { (IVal (Int $1)) : [$3] }
+              | Number '?' TraceIndices { (IVal (Int $1)) : $3 }
               | Number                  { [IVal (Int $1)] }
               | Char '.' TraceIndices   { (IVal (Char $1)) : $3 }
               | Char '!' TraceIndices   { (IVal (Char $1)) : $3 }
-              | Char '?' Index          { (IVal (Char $1)) : [$3] }
+              | Char '?' TraceIndices   { (IVal (Char $1)) : $3 }
               | Char                    { [IVal (Char $1)] }
 
 Sentences :: { [SSentence] }

@@ -26,6 +26,7 @@ data RunData =
     }
 
 type MonadRun = WriterT [Event] (ExceptT String (Reader RunData))
+newtype TraceEvent = TraceEvent { deTraceEvent :: Event }
 
 -- Acciones de la monada
 getProc :: ProcRef -> MonadRun Proc
@@ -165,3 +166,44 @@ checkLabeledAlt = checkLA
             vp <- p
             vq <- q
             return (vp && vq)
+
+-- SIEMPRE se matchea una traza contra un evento de especificacion
+-- los eventos de las trazas tienen todos los indices valuados, salvo
+-- posiblemente, el ultimo, que puede ser un parametro
+-- 
+matchEvents :: TraceEvent -> Event -> (Bool, Event)
+matchEvents (TraceEvent e1) e2 = 
+    (eventName e1 == eventName e2) &&
+    (length (indices e1) == length (indices e2)) &&
+    matchIndices (indices e1) (indices e2)
+    where
+        matchIndices :: [Index] -> [Index] -> Writer [Index] Bool
+        matchIndices [IVar _] [IVal v2] = do
+            tell [IVal v2]
+            return True
+        matchIndices [IOp _ "+" c] [IVal (Int v2)] =
+            if v2 - c >= 0 then do
+                tell [IVal (Int (v2-c))]
+                return True
+            else
+                return False
+        matchIndices [IVal v1] [IVal v2] = 
+            if (v1 == v2) then
+                return True
+            else
+                return False
+        matchIndices ((IVal v1):is1) ((IVal v2):is2) = 
+            if (v1 == v2) then 
+                matchIndices is1 is2
+            else
+                return False
+        matchIndices ((IVar _):is1) ((IVal v2):is2) = do
+            tell [IVal v2]
+            matchIndices is1 is2
+        matchIndices ((IOp _ "+" c):is1) ((IVal (Int v2)):is2) =
+            if v2 - c >= 0 then do
+                tell [IVal (Int (vs-c))]
+                matchIndices is1 is2
+            else
+                return False
+        matchIndices _ _ = undefined

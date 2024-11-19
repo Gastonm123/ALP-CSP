@@ -60,7 +60,7 @@ data Index
 data Val
   = Char Char
   | Int Int
-  deriving Show
+  deriving (Show, Eq)
 
 
 
