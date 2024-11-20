@@ -220,7 +220,7 @@ matchEvents (TraceEvent e1) e2 =
         matchIndices [IVal v1] [IVar _] = do
             tell [IVal v1]
             return True
-        matchIndices [IVal (Int v1)] [IOp _ "+" c] =
+        matchIndices [IVal (Int v1)] [IPlus _ c] =
             if v1 - c >= 0 then do
                 tell [IVal (Int (v1-c))]
                 return True
@@ -234,7 +234,7 @@ matchEvents (TraceEvent e1) e2 =
         matchIndices ((IVal v1):is1) ((IVar _):is2) = do
             tell [IVal v1]
             matchIndices is1 is2
-        matchIndices ((IVal (Int v1)):is1) ((IOp _ "+" c):is2) =
+        matchIndices ((IVal (Int v1)):is1) ((IPlus _ c):is2) =
             if v1 - c >= 0 then do
                 tell [IVal (Int (v1-c))]
                 matchIndices is1 is2

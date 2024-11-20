@@ -40,10 +40,10 @@ elabParam par = do
 maxIdxDiff :: IndexName -> Int -> SProc -> Int
 maxIdxDiff n c sp = foldSProc maxIdxParam c sp
     where
-        maxIdxParam (Left (IVar _)) acc = acc
-        maxIdxParam (Left (IVal _)) acc = acc
-        maxIdxParam (Left (IOp _ "+" _)) acc = acc
-        maxIdxParam (Left (IOp m "-" c)) acc = if n == m then max c acc else acc
+        maxIdxParam (Left (SIVar _)) acc = acc
+        maxIdxParam (Left (SIVal _)) acc = acc
+        maxIdxParam (Left (SIOp _ "+" _)) acc = acc
+        maxIdxParam (Left (SIOp m "-" c)) acc = if n == m then max c acc else acc
         maxIdxParam (Right (SBase _)) acc = acc
         maxIdxParam (Right (SOp _ "+" _)) acc = acc
         maxIdxParam (Right (SOp m "-" c)) acc = if n == m then max c acc else acc
@@ -57,17 +57,19 @@ normalizeIdxPar n diff = go
         go (SLabeledAlt           p q) = (SLabeledAlt     (go p) (go q))
         go (SParallel             p q) = (SParallel       (go p) (go q))
         go (SSequential           p q) = (SSequential     (go p) (go q))
-        go (SPrefix     (Event m i) q) = (SPrefix (Event m (map normIdx i)) (go q))
+        go (SPrefix    (SEvent m i) q) = (SPrefix (SEvent m (map normIdx i)) (go q))
         go (SByName (SProcRef m pars)) = (SByName (SProcRef m (map normPar pars)))
         go b = b
-        normIdx idx@(IVal  _) = idx
-        normIdx (IVar      m) = if m == n then (IOp m "+" diff) else (IVar m)
-        normIdx (IOp m "+" c) = if m == n then (IOp m "+" (c+diff)) else (IOp m "+" c)
-        normIdx (IOp m "-" c) = if m == n
-            then if diff-c>0 then (IOp m "+" (diff-c)) else (IVar m)
-            else (IOp m "-" c)
+        normIdx (SIVal      v) = (SIVal v)
+        normIdx (SIVar      m) = if m == n then (SIOp m "+" diff) else (SIVar m)
+        normIdx (SIOp m "+" c) = if m == n
+            then (SIOp m "+" (c+diff)) else (SIOp m "+" c)
+        normIdx (SIOp m "-" c) = if m == n
+            then if diff-c>0 then (SIOp m "+" (diff-c)) else (SIVar m)
+            else (SIOp m "+" c)
         normPar (SBase m) = (SBase m)
-        normPar (SOp m "+" c) = if m == n then (SOp m "+" (c+diff)) else (SOp m "+" c)
+        normPar (SOp m "+" c) = if m == n
+            then (SOp m "+" (c+diff)) else (SOp m "+" c)
         normPar (SOp m "-" c) = if m == n
             then (SOp m "+" (diff-c))
             else (SOp m "-" c)
@@ -82,7 +84,7 @@ foldSProc f z (SLabeledAlt           p q) = foldSProc f (foldSProc f z q) p
 foldSProc f z (SParallel             p q) = foldSProc f (foldSProc f z q) p
 foldSProc f z (SSequential           p q) = foldSProc f (foldSProc f z q) p
 foldSProc f z (SInterrupt            _ q) = foldSProc f (foldSProc f z q) q
-foldSProc f z (SPrefix    (Event _ is) q) = foldr (f . Left) (foldSProc f z q) is
+foldSProc f z (SPrefix   (SEvent _ is) q) = foldr (f . Left) (foldSProc f z q) is
 foldSProc f z (SByName (SProcRef _ pars)) = foldr (f . Right) z pars
 foldSProc _ z SStop = z
 foldSProc _ z SSkip = z
@@ -96,11 +98,16 @@ directElabProc = go
         go (SParallel             p q) = Parallel       (go p) (go q)
         go (SSequential           p q) = Sequential     (go p) (go q)
         go (SInterrupt            p q) = Interrupt      (go p) (go q)
-        go (SPrefix               e p) = Prefix e (go p)
-        go (SByName (SProcRef n pars)) = ByName (ProcRef n (map shallowElabPar pars))
+        go (SPrefix   (SEvent n is) p) = Prefix (Event n (map directElabIdx is)) (go p)
+        go (SByName (SProcRef n pars)) = ByName (ProcRef n (map directElabPar pars))
         go                       SStop = Stop
         go                       SSkip = Skip
-        shallowElabPar p = case p of
+        directElabPar p = case p of
             (SOp m "+" c) -> Inductive m c
             (SBase m) -> Base m
             _ -> error ("Parametro invalido: " ++ show p)
+        directElabIdx i = case i of
+            (SIOp m "+" c) -> IPlus m c
+            (SIVar m) -> IVar m
+            (SIVal v) -> IVal v
+            _ -> error ("Parametro invalido: " ++ show i)

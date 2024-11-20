@@ -1,5 +1,5 @@
 {-# LANGUAGE GADTs #-}
-module Lang (Val(..), SProg(..), SIndex, SSentence(..), BinOp, SParameter(..), SProcRef(..), SProc(..), SEvent, ProcRef(..), Parameter(..), Event(..), Index(..), Proc (..), Sentence (..), Prog (..)) where
+module Lang (Val(..), SProg(..), SIndex(..), SSentence(..), BinOp, SParameter(..), SProcRef(..), SProc(..), SEvent(..), ProcRef(..), Parameter(..), Event(..), Index(..), Proc (..), Sentence (..), Prog (..)) where
 import Data.List (intercalate)
 
 -- Programa
@@ -80,7 +80,11 @@ data SProcRef =
   }
 
 -- Eventos azucarados
-type SEvent = Event
+data SEvent =
+  SEvent {
+    seventName :: String,
+    sindices :: [SIndex]
+  }
 
 -- Procesos azucarados
 data SProc
@@ -107,7 +111,10 @@ data SParameter
   | SBase Int
 
 -- Indices azucarados
-type SIndex = Index
+data SIndex
+  = SIVar String
+  | SIVal Val
+  | SIOp String BinOp Int
 
 -- Otros
 type BinOp = String
@@ -128,7 +135,7 @@ instance Show ProcRef where
 instance Show Index where
   show (IVal i) = show i
   show (IVar n) = n
-  show (IOp i op c) = i ++ op ++ show c
+  show (IPlus i c) = i ++ "+" ++ show c
 
 instance Show Event where
   show (Event n i) = if not (null i) then n ++ "." ++ intercalate "." (map show i) else n
@@ -142,3 +149,11 @@ instance Show SProcRef where
 
 instance Show Prog where
   show _ = "working on it......."
+
+instance Show SIndex where
+  show (SIOp m op c) = m ++ op ++ show c
+  show (SIVar m) = m
+  show (SIVal v) = show v
+
+instance Show SEvent where
+  show (SEvent n i) = if not (null i) then n ++ "." ++ intercalate "." (map show i) else n

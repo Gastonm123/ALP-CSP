@@ -90,10 +90,10 @@ Event :: { SEvent }
       | word                    { Event $1 [] }
 
 Index :: { SIndex }
-      : word BinOp Number       { IOp $1 $2 $3 }
-      | word                    { IVar $1 }
-      | Char                    { IVal (Char $1) }
-      | Number                  { IVal (Int $1) }
+      : word BinOp Number       { SIOp $1 $2 $3 }
+      | word                    { SIVar $1 }
+      | Char                    { SIVal (Char $1) }
+      | Number                  { SIVal (Int $1) }
       | '(' Index ')'           { $2 }
 
 Indices :: { [SIndex] }
