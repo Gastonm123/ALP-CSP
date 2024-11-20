@@ -30,8 +30,8 @@ data Proc
   | LabeledAlt Proc Proc
   | Parallel Proc Proc
   | Sequential Proc Proc
-  | Prefix Event Proc
   | Interrupt Proc Proc
+  | Prefix Event Proc
   | ByName ProcRef
   | Stop
   | Skip
@@ -54,7 +54,7 @@ data Parameter
 data Index
   = IVal Val
   | IVar String
-  | IOp String BinOp Int
+  | IPlus String Int
 
 -- Valores de los indices
 data Val

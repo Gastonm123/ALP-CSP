@@ -37,5 +37,3 @@ parseError :: (Show t, HasCallStack) => t -> P a
 parseError  tok s i = let
    stack = callStack
    in trace (prettyCallStack stack) (Failed $ "Linea "++show i++": Error de parseo en el token "++show tok++". Contexto: "++take 20 s)
-
-{-asdfafsdasdf-}

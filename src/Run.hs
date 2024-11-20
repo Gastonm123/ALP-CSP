@@ -1,5 +1,6 @@
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# HLINT ignore "Redundant bracket" #-}
+{-# HLINT ignore "Use lambda-case" #-}
 module Run where
 
 import Lang
@@ -9,14 +10,14 @@ import Control.Monad.Except
 import Control.Monad.Writer
 import Data.Maybe
 import Data.Functor
+import Control.Monad (forM_)
 
 run :: Prog -> IO ()
 run (Prog sents []) = do
     putStrLn "Especificacion cargada sin trazas para ejecutar."
     putStrLn "Ast:"
     mapM_ print sents
-run (Prog sents tr) = do
-    foldr
+run (Prog sents tr) =
     return ()
 
 data RunData =
@@ -28,24 +29,40 @@ data RunData =
 type MonadRun = WriterT [Event] (ExceptT String (Reader RunData))
 newtype TraceEvent = TraceEvent { deTraceEvent :: Event }
 
+data SubstLoop = SubstLoop { substProc :: Proc, substVars :: [Parameter] }
+
 -- Acciones de la monada
 -- La referencia que se busca DEBE tener todos los parametros con valor.
 -- Si todas las sentencias son cerradas entonces podemos asegurarlo.
 getProc :: ProcRef -> MonadRun Proc
 getProc pRef = do
     sents <- asks rSentences
-    let  findProc = filter (matchRefInSent pRef) sents
-    case findProc of
-        [s] -> let (Assign _ p) = s in return p
+    case findProc sents of
+        [s] -> do 
+            let (Assign _ p, pars) = s
+            let parsOfRef = params pRef
+            let substLoop = (forM_ parsOfRef (\i -> case i of
+                    (Inductive n _) -> do
+                        p <- gets substProc
+                        vars <- gets substVars
+                        let p1 = subst n (head vars) p
+                        put (SubstLoop p1 (tail vars))
+                    (Base _) -> return ())) :: State SubstLoop ()
+            let (SubstLoop p1 _) = execState substLoop (SubstLoop p pars) 
+            return p1
         (_:_) -> throwError ("El proceso"++show pRef++" es ambiguo.")
         []    -> throwError ("El proceso "++show pRef++" no esta definido.")
     where
+        findProc (sent:ss) = case matchRefInSent pRef sent of
+            (True, pars) -> (sent, pars) : findProc ss
+            (False, _) -> findProc ss
+        findProc [] = []
         matchRefInSent p (Assign q _) =
             if  (procName p == procName q) &&
                 (length (params p) == length (params q))
-            then ()
-            else ()
-        matchParams :: [Parameter] -> [Parameter] -> Writer [Parameter] Bool
+            then runWriter (matchParams (params p) (params q))
+            else (False, [])
+        matchParams :: [Parameter] -> [Parameter] -> Writer [Int] Bool
         matchParams [Base v1] [Base v2] = 
             if (v1 == v2) then
                 return True
@@ -53,7 +70,7 @@ getProc pRef = do
                 return False
         matchParams [Base v1] [Inductive _ c] =
             if v1 - c >= 0 then do
-                tell [Base (v1-c)]
+                tell [v1-c]
                 return True
             else
                 return False
@@ -64,16 +81,13 @@ getProc pRef = do
                 return False
         matchParams ((Base v1):is1) ((Inductive _ c):is2) =
             if v1 - c >= 0 then do
-                tell [Base (v1-c)]
+                tell [v1-c]
                 matchParams is1 is2
             else
                 return False
         matchParams _ _ = return False
 
--- InternalChoice con ocultacion de eventos tendria algo de significado
--- porque el procedimiento automatico eligiría uno de los procesos y lo
--- haría diferenciarse de ExternalChoice. Por ahora, son iguales. El
--- entorno decide en ambos casos.
+
 accept :: Proc -> MonadRun (Maybe Proc)
 accept (InternalChoice p q) = do
     nextp <- accept p
@@ -83,6 +97,9 @@ accept (InternalChoice p q) = do
         (Just p', Nothing) -> return (Just p')
         (Nothing, Just q') -> return (Just q')
         (Nothing, Nothing) -> return Nothing
+{-  InternalChoice con ocultacion de eventos tendria mas sentido porque el
+    procedimiento automatico eligiría uno de los procesos. Por ahora External e
+    Internal son iguales. El entorno decide en ambos casos. -}
 accept (ExternalChoice p q) = do
     nextp <- accept p
     nextq <- accept q
@@ -224,6 +241,38 @@ matchEvents (TraceEvent e1) e2 =
             else
                 return False
         matchIndices _ _ = return False
+
+subst :: String -> Int -> Proc -> Proc 
+subst n vn = go
+    where
+        go (InternalChoice p q) = InternalChoice (go p) (go q)
+        go (ExternalChoice p q) = ExternalChoice (go p) (go q)
+        go (LabeledAlt     p q) = LabeledAlt (go p) (go q)
+        go (Parallel       p q) = Parallel (go p) (go q)
+        go (Sequential     p q) = Sequential (go p) (go q)
+        go (Interrupt      p q) = Interrupt (go p) (go q)
+        go (Prefix         e q) = let
+                nameE = eventName e
+                indE  = indices e
+                indE1 = for indE (\i -> case i of
+                    IVar m -> if m == n then IVal vn else IVar m
+                    IPlus m c -> if m == n then IVal (vn+c) else IPlus m c
+                    val -> val)
+                in Prefix (Event nameE indE1) (go q)
+        go (ByName          pr) = let
+                namePr  = procName pr
+                parsPr  = params pr
+                parsPr1 = for parsPr (\i -> case i of
+                    Inductive m c -> 
+                        if m == n then
+                            Base vn + c
+                        else
+                            Inductive m c
+                    val -> val)
+                in ByName (ProcRef namePr parsPr1)
+        go Stop = Stop
+        go Skip = Skip
+
 
 -- Checks estaticos
 

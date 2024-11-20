@@ -11,10 +11,11 @@
         "**/dist-newstyle": true,
         "**/stack.yaml": true,
         "**/package.yaml": true,
-        "**/CSP-stack.cabal": false,
+        "**/CSP-stack.cabal": true,
         "**/stack.yaml.lock": true,
         "**/Setup.hs": true,
-        "**/hie.yaml": true
+        "**/hie.yaml": true,
+        "**/compilador-main": true
     },
     "editor.rulers": [80]
 }
