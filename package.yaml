@@ -45,6 +45,10 @@ ghc-options:
 
 library:
   source-dirs: src
+  extensions:
+  - PatternSynonyms
+  build-tool-depends:
+  - happy:happy == 2.0
 
 executables:
   CSP-stack-exe:
@@ -56,6 +60,8 @@ executables:
     - -with-rtsopts=-N
     dependencies:
     - CSP-stack
+    build-tool-depends:
+    - happy:happy == 2.0
 
 tests:
   CSP-stack-test:
@@ -67,3 +73,5 @@ tests:
     - -with-rtsopts=-N
     dependencies:
     - CSP-stack
+    build-tool-depends:
+    - happy:happy == 2.0

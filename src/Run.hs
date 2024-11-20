@@ -1,6 +1,7 @@
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# HLINT ignore "Redundant bracket" #-}
 {-# HLINT ignore "Use lambda-case" #-}
+{-# HLINT ignore "Avoid lambda using `infix`" #-}
 module Run where
 
 import Lang
@@ -10,7 +11,8 @@ import Control.Monad.Except
 import Control.Monad.Writer
 import Data.Maybe
 import Data.Functor
-import Control.Monad (forM_)
+import Control.Monad
+import Data.Traversable
 
 run :: Prog -> IO ()
 run (Prog sents []) = do
@@ -29,16 +31,17 @@ data RunData =
 type MonadRun = WriterT [Event] (ExceptT String (Reader RunData))
 newtype TraceEvent = TraceEvent { deTraceEvent :: Event }
 
-data SubstLoop = SubstLoop { substProc :: Proc, substVars :: [Parameter] }
+data SubstLoop = SubstLoop { substProc :: Proc, substVars :: [Int] }
 
 -- Acciones de la monada
+
 -- La referencia que se busca DEBE tener todos los parametros con valor.
 -- Si todas las sentencias son cerradas entonces podemos asegurarlo.
 getProc :: ProcRef -> MonadRun Proc
 getProc pRef = do
     sents <- asks rSentences
     case findProc sents of
-        [s] -> do 
+        [s] -> do
             let (Assign _ p, pars) = s
             let parsOfRef = params pRef
             let substLoop = (forM_ parsOfRef (\i -> case i of
@@ -48,9 +51,9 @@ getProc pRef = do
                         let p1 = subst n (head vars) p
                         put (SubstLoop p1 (tail vars))
                     (Base _) -> return ())) :: State SubstLoop ()
-            let (SubstLoop p1 _) = execState substLoop (SubstLoop p pars) 
+            let (SubstLoop p1 _) = execState substLoop (SubstLoop p pars)
             return p1
-        (_:_) -> throwError ("El proceso"++show pRef++" es ambiguo.")
+        (_:_) -> throwError ("El proceso "++show pRef++" es ambiguo.")
         []    -> throwError ("El proceso "++show pRef++" no esta definido.")
     where
         findProc (sent:ss) = case matchRefInSent pRef sent of
@@ -63,7 +66,7 @@ getProc pRef = do
             then runWriter (matchParams (params p) (params q))
             else (False, [])
         matchParams :: [Parameter] -> [Parameter] -> Writer [Int] Bool
-        matchParams [Base v1] [Base v2] = 
+        matchParams [Base v1] [Base v2] =
             if (v1 == v2) then
                 return True
             else
@@ -74,8 +77,8 @@ getProc pRef = do
                 return True
             else
                 return False
-        matchParams ((Base v1):is1) ((Base v2):is2) = 
-            if (v1 == v2) then 
+        matchParams ((Base v1):is1) ((Base v2):is2) =
+            if (v1 == v2) then
                 matchParams is1 is2
             else
                 return False
@@ -141,9 +144,10 @@ accept Stop = return Nothing
 accept Skip = return Nothing
 accept (Prefix e1 p) = do
     e2 <- asks rEvent
-    if matchEvents e1 e2
-        then return (Just p)
-        else return Nothing
+    case matchEvents (TraceEvent e2) e1 of
+        (True, is) -> -- sustituir is en p
+            return (Just p)
+        (False, _) -> return Nothing
 accept (Parallel p q) = do
     ev <- asks rEvent
     nextp <- accept p
@@ -170,6 +174,7 @@ inAlpha e p = evalStateT (inAlpha' e p) []
 inAlpha' :: Event -> Proc -> StateT [ProcRef] MonadRun Bool
 inAlpha' e = go
     where
+        go :: Proc -> StateT [ProcRef] MonadRun Bool
         go (InternalChoice p q) = bin p q
         go (ExternalChoice p q) = bin p q
         go (Parallel       p q) = bin p q
@@ -180,13 +185,12 @@ inAlpha' e = go
         go Stop                 = return False
         --
         go (Prefix        e1 q) =
-            if matchEvents e e1 then
-                return True
-            else
-                go q
+            case matchEvents (TraceEvent e) e1 of
+                (True,  _) -> return True
+                (False, _) -> go q
         go (ByName           n) = do
             seen <- get
-            if member n seen then
+            if n `elem` seen then
                 return False
             else do
                 put (n:seen)
@@ -205,14 +209,14 @@ inAlpha' e = go
 -- en el evento
 -- 
 matchEvents :: TraceEvent -> Event -> (Bool, [Index])
-matchEvents (TraceEvent e1) e2 = 
+matchEvents (TraceEvent e1) e2 =
     if  (eventName e1 == eventName e2) &&
         (length (indices e1) == length (indices e2))
     then runWriter (matchIndices (indices e1) (indices e2))
     else (False, [])
     where
         matchIndices :: [Index] -> [Index] -> Writer [Index] Bool
-        matchIndices [IVal v1] [IVal v2] = 
+        matchIndices [IVal v1] [IVal v2] =
             if (v1 == v2) then
                 return True
             else
@@ -226,8 +230,8 @@ matchEvents (TraceEvent e1) e2 =
                 return True
             else
                 return False
-        matchIndices ((IVal v1):is1) ((IVal v2):is2) = 
-            if (v1 == v2) then 
+        matchIndices ((IVal v1):is1) ((IVal v2):is2) =
+            if (v1 == v2) then
                 matchIndices is1 is2
             else
                 return False
@@ -242,7 +246,7 @@ matchEvents (TraceEvent e1) e2 =
                 return False
         matchIndices _ _ = return False
 
-subst :: String -> Int -> Proc -> Proc 
+subst :: String -> Int -> Proc -> Proc
 subst n vn = go
     where
         go (InternalChoice p q) = InternalChoice (go p) (go q)
@@ -263,7 +267,7 @@ subst n vn = go
                 namePr  = procName pr
                 parsPr  = params pr
                 parsPr1 = for parsPr (\i -> case i of
-                    Inductive m c -> 
+                    Inductive m c ->
                         if m == n then
                             Base vn + c
                         else
@@ -300,8 +304,9 @@ checkLabeledAlt = checkLA
             evsQ <- collectEvents q
             case (evsP, evsQ) of
                 (Just evsP1, Just evsQ1) ->
-                    let shared = any (`elem` evsQ1) evsP1 -- O(n^2). mejorar?
-                    in if shared 
+                    -- shared = O(n^2). mejorar?
+                    let shared = any (\e -> e `elem` evsQ1) evsP1
+                    in if shared
                         then return Nothing
                         else return (Just (evsP1++evsQ1))
                 (_, _) -> return Nothing

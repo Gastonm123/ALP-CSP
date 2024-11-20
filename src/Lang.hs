@@ -1,9 +1,12 @@
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE PatternSynonyms #-}
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+{-# HLINT ignore "Redundant bracket" #-}
 module Lang (Val(..), SProg(..), SIndex(..), SSentence(..), BinOp, SParameter(..), SProcRef(..), SProc(..), SEvent(..), ProcRef(..), Parameter(..), Event(..), Index(..), Proc (..), Sentence (..), Prog (..)) where
 import Data.List (intercalate)
 
 -- Programa
-data Prog = 
+data Prog =
   Prog {
     sentences :: [Sentence],
     events :: [Event]
@@ -104,7 +107,7 @@ data SProc
 data SSentence
   = SAssign SProcRef SProc
   deriving Show
-  
+
 -- Parametros azucarados
 data SParameter
   = SOp String BinOp Int
@@ -157,3 +160,46 @@ instance Show SIndex where
 
 instance Show SEvent where
   show (SEvent n i) = if not (null i) then n ++ "." ++ intercalate "." (map show i) else n
+
+
+-- Igualdad de eventos y procesos:
+-- Si existe una asignacion donde son iguales, entonces son iguales
+
+pattern INF = -1
+data Dom = DomInt (Int, Int) | DomChar Char
+
+instance Eq Event where
+  (==) (Event n1 is1) (Event n2 is2)
+    =  n1 == n2
+    && length is1 == length is2
+    && not (isEmptyInters (map dom is1) (map dom is2))
+    where
+      dom (IVal (Char c)) = DomChar c
+      dom (IVal  (Int v)) = DomInt (v,v)
+      dom (IVar        _) = DomInt (0,INF)
+      dom (IPlus     _ c) = DomInt (c,INF)
+
+instance Eq ProcRef where
+  (==) (ProcRef n1 pars1) (ProcRef n2 pars2)
+    =  n1 == n2
+    && length pars1 == length pars2
+    && not (isEmptyInters (map dom pars1) (map dom pars2))
+    where
+      dom (Base        v) = DomInt (v,v)
+      dom (Inductive _ c) = DomInt (c,INF)
+
+
+isEmptyInters :: [Dom] -> [Dom] -> Bool
+isEmptyInters ((DomChar c1):d1) ((DomChar c2):d2) =
+    (c1 /= c2) && isEmptyInters d1 d2
+isEmptyInters ((DomInt (_,INF)):_) ((DomInt (_,INF)):_) = False
+isEmptyInters ((DomInt (n,_)):d1) ((DomInt (m,INF)):d2) =
+    (n < m) && isEmptyInters d1 d2
+isEmptyInters ((DomInt (n,INF)):d1) ((DomInt (m,_)):d2) =
+    (m < n) && isEmptyInters d1 d2
+isEmptyInters [] [] = True
+isEmptyInters _ _ = True -- caso DomChar DomInt y viceversa
+-- isEmptyInters puede pensarse como la interseccion de dos subconjuntos de N^r
+-- (producto cartesiano de N, r veces).
+-- En el caso de los indices el producto cartesiano puede incluir singletes de
+-- caracteres.
