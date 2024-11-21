@@ -19,10 +19,10 @@ import Control.Monad
 
 run :: Prog -> IO ()
 run (Prog [] _) = do
-    putStrLn "Error: El parser generó un programa vacío"
+    putStrLn "! Error: El parser generó un programa vacío"
 run (Prog sents []) = do
-    putStrLn "Especificacion cargada sin trazas para ejecutar."
-    putStrLn "Ast:"
+    putStrLn "> Especificacion cargada sin trazas para ejecutar."
+    putStrLn "> Ast:"
     mapM_ print sents
 run (Prog sents tr) = do
     let (Assign _ espec) = head (reverse sents)
