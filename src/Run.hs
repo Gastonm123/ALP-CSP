@@ -5,7 +5,8 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE InstanceSigs #-}
-module Run where
+module Run (run, accept) where
+{- Exporta run para ejecucion desde CLI y accept para modo interactivo -}
 
 import Lang
 import Control.Monad.State
@@ -17,12 +18,37 @@ import Data.Functor
 import Control.Monad
 
 run :: Prog -> IO ()
+run (Prog [] _) = do
+    putStrLn "Error: El parser generó un programa vacío"
 run (Prog sents []) = do
     putStrLn "Especificacion cargada sin trazas para ejecutar."
     putStrLn "Ast:"
     mapM_ print sents
-run (Prog sents tr) =
-    return ()
+run (Prog sents tr) = do
+    let (Assign _ espec) = head (reverse sents)
+    {- La ultima declaracion del archivo es la especificacion -}
+    let (result, acceptedEvs) = (evalState . runWriterT . runExceptT)
+            (mapM_ handleEvent tr) espec
+    {- Diversion con monadas :D -}
+    case result of
+        (Left  err) -> do
+                putStrLn ("! Error: "++err)
+                putStrLn ("! Eventos aceptados: "++show acceptedEvs)
+        (Right _)   -> do
+                putStrLn  "> OK!"
+                putStrLn ("> La especificacion acepto todos los eventos de la"
+                    ++" traza")
+    where
+        handleEvent :: Event -> ExceptT String (WriterT [Event] (State Proc)) ()
+        handleEvent trEvent = do
+            espec1 <- get
+            tell [trEvent]
+            let accOrFailed = (runReader . runExceptT)
+                    (accept espec1) (RunData sents trEvent)
+            case accOrFailed of
+                Left err -> throwError err
+                Right Nothing -> throwError ("Event rejected "++show trEvent)
+                Right (Just espec2) -> put espec2
 
 data RunData =
     RunData {
@@ -30,7 +56,8 @@ data RunData =
         rEvent :: Event
     }
 
-type MonadRun = WriterT [Event] (ExceptT String (Reader RunData))
+type MonadRun = ExceptT String (Reader RunData)
+
 newtype TraceEvent = TraceEvent { deTraceEvent :: Event }
 
 data SubstLoop a = SubstLoop { substProc :: Proc, substVars :: [a] }
@@ -48,10 +75,10 @@ getProc pRef = do
             let parsOfRef = params pRef
             let substLoop = (forM_ parsOfRef (\i -> case i of
                     (Inductive n _) -> do
-                        p <- gets substProc
+                        p1 <- gets substProc
                         vars <- gets substVars
-                        let p1 = subst n (head vars) p
-                        put (SubstLoop p1 (tail vars))
+                        let p2 = subst n (head vars) p1
+                        put (SubstLoop p2 (tail vars))
                         {- no es posible fallar en esta parte por head o tail
                            porque los reemplazos para las variables se
                            obtuvieron uno por uno desde los parametros -}
@@ -199,12 +226,12 @@ inAlpha' :: Event -> Proc -> StateT [ProcRef] MonadRun Bool
 inAlpha' e = go
     where
         go :: Proc -> StateT [ProcRef] MonadRun Bool
-        go (InternalChoice p q) = bin p q
-        go (ExternalChoice p q) = bin p q
-        go (Parallel       p q) = bin p q
-        go (Sequential     p q) = bin p q
-        go (Interrupt      p q) = bin p q
-        go (LabeledAlt     p q) = bin p q
+        go (InternalChoice p q) = (||) <$> go p <*> go q
+        go (ExternalChoice p q) = (||) <$> go p <*> go q
+        go (Parallel       p q) = (||) <$> go p <*> go q
+        go (Sequential     p q) = (||) <$> go p <*> go q
+        go (Interrupt      p q) = (||) <$> go p <*> go q
+        go (LabeledAlt     p q) = (||) <$> go p <*> go q
         go Skip                 = return False
         go Stop                 = return False
         --
@@ -220,15 +247,9 @@ inAlpha' e = go
                 put (n:seen)
                 p <- lift (getProc n)
                 go p
-        bin p q = do
-            x <- (go p)
-            if x then
-                return True
-            else
-                go q
 
--- SIEMPRE se matchea una traza contra un evento de especificacion
--- los eventos de las trazas tienen todos los indices valuados.
+-- SIEMPRE se matchea una traza contra un evento de especificacion.
+-- Los eventos de las trazas tienen todos los indices valuados.
 -- El resultado de matchear incluye el reemplazo de las variables
 -- en el evento
 -- 
@@ -305,7 +326,6 @@ instance VariableSubstitution Int Proc where
             go Skip = Skip
 
 instance VariableSubstitution Val (MonadRun Proc) where
-    subst :: String -> Val -> Proc -> MonadRun Proc
     subst n vn = go
         where
             go (InternalChoice p q) = InternalChoice <$> (go p) <*> (go q)
@@ -364,11 +384,11 @@ checkClosed s = False
 checkLabeledAlt :: Proc -> Except String Bool
 checkLabeledAlt = checkLA
     where
-        checkLA (InternalChoice p q) = combine (checkLA p) (checkLA q)
-        checkLA (ExternalChoice p q) = combine (checkLA p) (checkLA q)
-        checkLA (Parallel       p q) = combine (checkLA p) (checkLA q)
-        checkLA (Sequential     p q) = combine (checkLA p) (checkLA q)
-        checkLA (Interrupt      p q) = combine (checkLA p) (checkLA q)
+        checkLA (InternalChoice p q) = (&&) <$> (checkLA p) <*> (checkLA q)
+        checkLA (ExternalChoice p q) = (&&) <$> (checkLA p) <*> (checkLA q)
+        checkLA (Parallel       p q) = (&&) <$> (checkLA p) <*> (checkLA q)
+        checkLA (Sequential     p q) = (&&) <$> (checkLA p) <*> (checkLA q)
+        checkLA (Interrupt      p q) = (&&) <$> (checkLA p) <*> (checkLA q)
         checkLA (Prefix         _ q) = checkLA q
         checkLA alt@(LabeledAlt _ _) = (collectEvents alt <&> isJust)
         checkLA (ByName _) = return True
@@ -389,7 +409,3 @@ checkLabeledAlt = checkLA
         collectEvents (Prefix e _) = return (Just [e])
         collectEvents p = throwError ("Se esperaba un prefijo o alternativa"++
             " etiquetada, pero se encontro "++show p)
-        combine p q = do
-            vp <- p
-            vq <- q
-            return (vp && vq)
