@@ -2,6 +2,9 @@
 {-# HLINT ignore "Redundant bracket" #-}
 {-# HLINT ignore "Use lambda-case" #-}
 {-# HLINT ignore "Avoid lambda using `infix`" #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE InstanceSigs #-}
 module Run where
 
 import Lang
@@ -12,7 +15,6 @@ import Control.Monad.Writer
 import Data.Maybe
 import Data.Functor
 import Control.Monad
-import Data.Traversable
 
 run :: Prog -> IO ()
 run (Prog sents []) = do
@@ -31,7 +33,7 @@ data RunData =
 type MonadRun = WriterT [Event] (ExceptT String (Reader RunData))
 newtype TraceEvent = TraceEvent { deTraceEvent :: Event }
 
-data SubstLoop = SubstLoop { substProc :: Proc, substVars :: [Int] }
+data SubstLoop a = SubstLoop { substProc :: Proc, substVars :: [a] }
 
 -- Acciones de la monada
 
@@ -50,7 +52,10 @@ getProc pRef = do
                         vars <- gets substVars
                         let p1 = subst n (head vars) p
                         put (SubstLoop p1 (tail vars))
-                    (Base _) -> return ())) :: State SubstLoop ()
+                        {- no es posible fallar en esta parte por head o tail
+                           porque los reemplazos para las variables se
+                           obtuvieron uno por uno desde los parametros -}
+                    (Base _) -> return ())) :: State (SubstLoop Int) ()
             let (SubstLoop p1 _) = execState substLoop (SubstLoop p pars)
             return p1
         (_:_) -> throwError ("El proceso "++show pRef++" es ambiguo.")
@@ -145,8 +150,27 @@ accept Skip = return Nothing
 accept (Prefix e1 p) = do
     e2 <- asks rEvent
     case matchEvents (TraceEvent e2) e1 of
-        (True, is) -> -- sustituir is en p
-            return (Just p)
+        (True, is) -> do
+            let isOfPrefix = indices e1
+            let substLoop = (forM_ isOfPrefix (\i -> case i of
+                    (IPlus n _) -> do
+                        p1   <- gets substProc
+                        vars <- gets substVars
+                        guard (not (null vars))
+                        p2   <- lift (subst n (head vars) p1)
+                        put (SubstLoop p2 (tail vars))
+                    (IVar n) -> do
+                        p1   <- gets substProc
+                        vars <- gets substVars
+                        guard (not (null vars))
+                        {- no es posible fallar en esta parte porque los
+                           reemplazos para las variables se obtuvieron uno por
+                           uno desde los indices -}
+                        p2   <- lift (subst n (head vars) p1)
+                        put (SubstLoop p2 (tail vars))
+                    (IVal _) -> return ())) :: StateT (SubstLoop Val) MonadRun ()
+            (SubstLoop p1 _) <- execStateT substLoop (SubstLoop p is)
+            return (Just p1)
         (False, _) -> return Nothing
 accept (Parallel p q) = do
     ev <- asks rEvent
@@ -208,25 +232,25 @@ inAlpha' e = go
 -- El resultado de matchear incluye el reemplazo de las variables
 -- en el evento
 -- 
-matchEvents :: TraceEvent -> Event -> (Bool, [Index])
+matchEvents :: TraceEvent -> Event -> (Bool, [Val])
 matchEvents (TraceEvent e1) e2 =
     if  (eventName e1 == eventName e2) &&
         (length (indices e1) == length (indices e2))
     then runWriter (matchIndices (indices e1) (indices e2))
     else (False, [])
     where
-        matchIndices :: [Index] -> [Index] -> Writer [Index] Bool
+        matchIndices :: [Index] -> [Index] -> Writer [Val] Bool
         matchIndices [IVal v1] [IVal v2] =
             if (v1 == v2) then
                 return True
             else
                 return False
         matchIndices [IVal v1] [IVar _] = do
-            tell [IVal v1]
+            tell [v1]
             return True
         matchIndices [IVal (Int v1)] [IPlus _ c] =
             if v1 - c >= 0 then do
-                tell [IVal (Int (v1-c))]
+                tell [Int (v1-c)]
                 return True
             else
                 return False
@@ -236,47 +260,99 @@ matchEvents (TraceEvent e1) e2 =
             else
                 return False
         matchIndices ((IVal v1):is1) ((IVar _):is2) = do
-            tell [IVal v1]
+            tell [v1]
             matchIndices is1 is2
         matchIndices ((IVal (Int v1)):is1) ((IPlus _ c):is2) =
             if v1 - c >= 0 then do
-                tell [IVal (Int (v1-c))]
+                tell [Int (v1-c)]
                 matchIndices is1 is2
             else
                 return False
         matchIndices _ _ = return False
 
-subst :: String -> Int -> Proc -> Proc
-subst n vn = go
-    where
-        go (InternalChoice p q) = InternalChoice (go p) (go q)
-        go (ExternalChoice p q) = ExternalChoice (go p) (go q)
-        go (LabeledAlt     p q) = LabeledAlt (go p) (go q)
-        go (Parallel       p q) = Parallel (go p) (go q)
-        go (Sequential     p q) = Sequential (go p) (go q)
-        go (Interrupt      p q) = Interrupt (go p) (go q)
-        go (Prefix         e q) = let
-                nameE = eventName e
-                indE  = indices e
-                indE1 = for indE (\i -> case i of
-                    IVar m -> if m == n then IVal vn else IVar m
-                    IPlus m c -> if m == n then IVal (vn+c) else IPlus m c
-                    val -> val)
-                in Prefix (Event nameE indE1) (go q)
-        go (ByName          pr) = let
-                namePr  = procName pr
-                parsPr  = params pr
-                parsPr1 = for parsPr (\i -> case i of
-                    Inductive m c ->
-                        if m == n then
-                            Base vn + c
-                        else
-                            Inductive m c
-                    val -> val)
-                in ByName (ProcRef namePr parsPr1)
-        go Stop = Stop
-        go Skip = Skip
+class VariableSubstitution a ret where
+    subst :: String -> a -> Proc -> ret
 
+instance VariableSubstitution Int Proc where
+    subst n vn = go
+        where
+            go (InternalChoice p q) = InternalChoice (go p) (go q)
+            go (ExternalChoice p q) = ExternalChoice (go p) (go q)
+            go (LabeledAlt     p q) = LabeledAlt (go p) (go q)
+            go (Parallel       p q) = Parallel (go p) (go q)
+            go (Sequential     p q) = Sequential (go p) (go q)
+            go (Interrupt      p q) = Interrupt (go p) (go q)
+            go (Prefix         e q) = let
+                    nameE = eventName e
+                    indE  = indices e
+                    indE1 = map (\i -> case i of
+                        IVar m -> if m == n then IVal (Int vn) else IVar m
+                        IPlus m c -> if m == n then IVal (Int (vn+c)) else IPlus m c
+                        val -> val) indE
+                    in Prefix (Event nameE indE1) (go q)
+            go (ByName          pr) = let
+                    namePr  = procName pr
+                    parsPr  = params pr
+                    parsPr1 = map (\i -> case i of
+                        Inductive m c ->
+                            if m == n then
+                                Base (vn + c)
+                            else
+                                Inductive m c
+                        val -> val) parsPr
+                    in ByName (ProcRef namePr parsPr1)
+            go Stop = Stop
+            go Skip = Skip
+
+instance VariableSubstitution Val (MonadRun Proc) where
+    subst :: String -> Val -> Proc -> MonadRun Proc
+    subst n vn = go
+        where
+            go (InternalChoice p q) = InternalChoice <$> (go p) <*> (go q)
+            go (ExternalChoice p q) = ExternalChoice <$> (go p) <*> (go q)
+            go (LabeledAlt     p q) = LabeledAlt <$> (go p) <*> (go q)
+            go (Parallel       p q) = Parallel <$> (go p) <*> (go q)
+            go (Sequential     p q) = Sequential <$> (go p) <*> (go q)
+            go (Interrupt      p q) = Interrupt <$> (go p) <*> (go q)
+            go (Prefix         e q) = do
+                    let nameE = eventName e
+                    let indE  = indices e
+                    indE1 <- mapM (\i -> case i of
+                        IVar m ->
+                            if m == n then
+                                return (IVal vn)
+                            else
+                                return (IVar m)
+                        IPlus m c ->
+                            if m == n then
+                                case vn of
+                                    (Int  v) -> return (IVal (Int (v+c)))
+                                    (Char _) -> typeError1 e
+                            else return (IPlus m c)
+                        val -> return val) indE
+                    (Prefix (Event nameE indE1)) <$> (go q)
+            go (ByName          pr) = do
+                    let namePr  = procName pr
+                    let parsPr  = params pr
+                    parsPr1 <- mapM (\i -> case i of
+                        Inductive m c ->
+                            if m == n then
+                                case vn of
+                                    (Int  v) -> return (Base (v + c))
+                                    (Char _) -> typeError pr
+                            else
+                                return (Inductive m c)
+                        val -> return val) parsPr
+                    return (ByName (ProcRef namePr parsPr1))
+            go Stop = return Stop
+            go Skip = return Skip
+            typeError :: ProcRef -> MonadRun a
+            typeError pr = throwError ("Se intento reemplazar el parametro "
+                ++n++" en el proceso "++show pr++" con un caracter")
+            typeError1 :: Event -> MonadRun a
+            typeError1 ev = throwError ("Se intento reemplazar el indice "
+                ++n++" en el evento "++show ev++" con un caracter, pero este"
+                ++" debe ser operado con un numero")
 
 -- Checks estaticos
 
