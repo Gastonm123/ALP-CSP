@@ -56,7 +56,7 @@ Program :: { SProg }
      : Sentences '-O-' Trace    { SProg $1 $3 }
      | Sentences                { SProg $1 [] }
 
-Trace  :: { [Event] }
+Trace  :: { [SEvent] }
        : TraceEv Trace          { $1 : $2 }
        | TraceEv                { [$1] }
        | {- empty -}            { [] }
@@ -84,10 +84,10 @@ Events :: { [SEvent] }
        | Event                  { [$1] }
 
 Event :: { SEvent }
-      : word '.' Indices        { Event $1 $3 }
-      | word '!' Index          { Event $1 [$3] }
-      | word '?' Index          { Event $1 [$3] }
-      | word                    { Event $1 [] }
+      : word '.' Indices        { SEvent $1 $3 }
+      | word '!' Index          { SEvent $1 [$3] }
+      | word '?' Index          { SEvent $1 [$3] }
+      | word                    { SEvent $1 [] }
 
 Index :: { SIndex }
       : word BinOp Number       { SIOp $1 $2 $3 }

@@ -86,7 +86,7 @@ data SProcRef =
 data SEvent =
   SEvent {
     seventName :: String,
-    sindices :: [SIndex]
+    sindices :: [Index]
   }
 
 -- Procesos azucarados
