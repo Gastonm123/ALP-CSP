@@ -18,6 +18,7 @@ import Data.Maybe
 import Data.Functor
 import Control.Monad
 import Debug.Trace (trace, traceM)
+import PrettyPrint
 
 run :: Prog -> ReaderT Conf IO ()
 run (Prog [] _) = do
@@ -49,7 +50,7 @@ run (Prog sents tr) = do
             when isDebug (do
                 liftIO (putStrLn ("? Siguiente evento: "++show trEvent))
                 liftIO (putStrLn ("? Estado especificacion:"))
-                liftIO (print espec1))
+                liftIO (render (prettyPrint espec1)))
             let accOrFailed = (runReader . runExceptT)
                     (accept espec1) (RunData sents trEvent)
             case accOrFailed of
@@ -128,12 +129,13 @@ accept int@(Interrupt p q) = do
             ev <- asks rEvent
             throwError ("El evento "++show ev++" fue aceptado mas de una vez"++
                 " en una interrupcion: "++show int)
-accept (ByName n) = getProc n >>= accept
+accept (ByName n) = do
+    p <- getProc n
+    accept p
 accept Stop = return Nothing
 accept Skip = return Nothing
 accept (Prefix e1 p) = do
     e2 <- asks rEvent
-    -- trace (show [e1,e2]) (return ())
     case matchEvents (TraceEvent e2) e1 of
         (True, is) -> do
             let isOfPrefix = indices e1
@@ -158,7 +160,6 @@ accept (Prefix e1 p) = do
             return (Just p1)
         (False, _) -> return Nothing
 accept (Parallel p q) = do
-    -- trace (show [p,q]) (return ())
     ev <- asks rEvent
     nextp <- accept p
     nextq <- accept q
@@ -214,9 +215,9 @@ getProc pRef = do
     sents <- asks rSentences
     case findProc sents of
         [s] -> do
-            let (Assign _ p, pars) = s
-            let parsOfRef = params pRef
-            let substLoop = (forM_ parsOfRef (\i -> case i of
+            let (Assign pRef1 p, pars) = s
+            let parsOfMatch = params pRef1
+            let substLoop = (forM_ parsOfMatch (\i -> case i of
                     (Inductive n _) -> do
                         p1 <- gets substProc
                         vars <- gets substVars

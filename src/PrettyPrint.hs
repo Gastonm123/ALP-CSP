@@ -9,12 +9,12 @@
 --
 -- This library deals with pretty printing errors, sentences and processes
 
-module PrettyPrint where
+module PrettyPrint(prettyPrint, render) where
 
 import Lang
 import Prettyprinter
 import Prettyprinter.Render.Terminal
-import GHC.IO.FD (stdout)
+import System.IO
 
 prettyPrint :: Proc -> Doc AnsiStyle
 prettyPrint = go
@@ -92,4 +92,6 @@ paren :: Doc AnsiStyle -> Doc AnsiStyle
 paren p = pretty "(" <> p <> pretty ")"
 
 render :: Doc AnsiStyle -> IO ()
-render doc = renderIO stdout ( layoutPretty defaultLayoutOptions doc )
+render doc = do
+  renderIO stdout ( layoutPretty defaultLayoutOptions doc )
+  putStrLn ""
