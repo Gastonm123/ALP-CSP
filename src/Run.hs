@@ -24,9 +24,10 @@ run :: Prog -> ReaderT Conf IO ()
 run (Prog [] _) = do
     liftIO (putStrLn "! Error: El parser generó un programa vacío")
 run (Prog sents []) = do
+    let (Assign _ espec) = head (reverse sents)
     liftIO (putStrLn "> Especificacion cargada sin trazas para ejecutar.")
-    liftIO (putStrLn "> Ast:")
-    mapM_ (liftIO . print) sents
+    liftIO (putStrLn "> Especificacion:")
+    liftIO (render (prettyPrint espec))
 run (Prog sents tr) = do
     let (Assign _ espec) = head (reverse sents)
     {- La ultima declaracion del archivo es la especificacion -}
@@ -115,7 +116,7 @@ accept alt@(LabeledAlt p q) = do
         (Just _, Just _) -> do
             ev <- asks rEvent
             throwError ("El evento "++show ev++" fue aceptado mas de una vez"++
-                " en una alternativa: "++show alt)
+                " en una alternativa: "++(show . prettyPrint) alt)
 accept (Sequential Stop p) = return Nothing
 accept (Sequential p Skip) = accept p
 accept (Sequential Skip p) = accept p
@@ -134,7 +135,7 @@ accept int@(Interrupt p q) = do
         (Just _, Just _) -> do
             ev <- asks rEvent
             throwError ("El evento "++show ev++" fue aceptado mas de una vez"++
-                " en una interrupcion: "++show int)
+                " en una interrupcion: "++(show . prettyPrint) int)
 accept (ByName n) = do
     p <- getProc n
     accept p
@@ -177,16 +178,18 @@ accept (Parallel p q) = do
         (Nothing, Nothing) -> return Nothing
         (Just p', Nothing) -> do
             inQ <- inAlpha ev q
-            if inQ then
-                return Nothing
+            if inQ then do
+                traceM ((show . prettyPrint) q)
+                trace "-- HOLA MUNDO" $ return Nothing
             else case q of
                 Stop -> return (Just p')
                 Skip -> return (Just p')
                 _    -> return (Just (Parallel p' q))
         (Nothing, Just q') -> do
             inP <- inAlpha ev p
-            if inP then
-                return Nothing
+            if inP then do
+                traceM ((show . prettyPrint) p)
+                trace "-- HOLA MUNDO" $ return Nothing
             else case p of
                 Stop -> return (Just q')
                 Skip -> return (Just q')
@@ -214,15 +217,36 @@ inAlpha' e = go
         go (Prefix        e1 q) =
             case matchEvents (TraceEvent e) e1 of
                 (True,  _) -> return True
-                (False, _) -> go q
+                (False, _) -> let
+                    is = indices e1
+                    varsOfEvent = mapMaybe asVariable is
+                    substLoop = (forM_ varsOfEvent (\n -> do
+                        p1   <- gets substProc
+                        vars <- gets substVars
+                        let p2 = subst n (head vars) p1
+                        put (SubstLoop p2 (tail vars)))
+                        {- no es posible fallar en esta parte por head o tail
+                        porque la lista de reemplazos es infinita -}
+                        ) :: State (SubstLoop Int) ()
+                    substData = (SubstLoop q (repeat (-1)))
+                    (SubstLoop p1 _) = execState substLoop substData
+                    in go p1
         go (ByName           n) = do
-            seen <- get
-            if n `elem` seen then
+            if any isInductiveOrUndef (params n) then
                 return False
             else do
-                put (n:seen)
-                p <- lift (getProc n)
-                go p
+                seen <- get
+                if n `elem` seen then
+                    return False
+                else do
+                    put (n:seen)
+                    p <- lift (getProc n)
+                    go p
+        isInductiveOrUndef (Inductive _ _) = True
+        isInductiveOrUndef (Base n) = (n == -1)
+        asVariable (IVar v) = Just v
+        asVariable (IPlus v _) = Just v 
+        asVariable (IVal _) = Nothing
 
 -- La referencia que se busca DEBE tener todos los parametros con valor.
 -- Si todas las sentencias son cerradas entonces podemos asegurarlo.

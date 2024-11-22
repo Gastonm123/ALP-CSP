@@ -23,22 +23,22 @@ donde ang es un angulo.
 -}
 
 -- Uso: timer de t*100 milisegundos
-TIMER.t    = start -> (WAIT.t; TIMER.t) /\ stop -> TIMER.t |
+TIMER.t    = start -> ((WAIT.t; TIMER.t) /\ stop -> TIMER.t) |
     tick -> TIMER.t
 --
 WAIT.0     = timeout -> SKIP
 WAIT.(t+1) = tick -> WAIT.t
 
-RP = deteccion?b -> start -> 
-        (disponible.1 -> stop -> objetivo.1!b -> RP |
-         disponible.2 -> stop -> objetivo.2!b -> RP)
-    /\ timeout -> alertuntracked.b -> RP
+RP = RP.1 /\ timeout -> alertuntracked.b -> RP
+RP.1 = deteccion?b -> start ->
+    (disponible.1 -> stop -> objetivo.1!b -> RP.1 |
+    disponible.2 -> stop -> objetivo.2!b -> RP.1)
 
 --
 DK_CANION.i = disparar.i -> descargar.i -> recargar.i -> DK_CANION.i
 RS.i        = disponible.i -> objetivo.i?b -> 
-    (SEGUIR.i.b /\ (disparar.i -> SKIP | abandonar.i -> SKIP | fuera.i -> SKIP));
-    inactivo.i -> RS.i
+    (SEGUIR.i.b /\ ((disparar.b -> SKIP | abandonar.b -> SKIP | fuera.b -> SKIP);
+    inactivo.i -> RS.i))
 SEGUIR.i.b  = 
     objarriba.b -> arriba.i -> SEGUIR.i.b |
     objabajo.b -> abajo.i -> SEGUIR.i.b |
@@ -46,10 +46,14 @@ SEGUIR.i.b  =
     objgiroh.b -> giroa.i -> SEGUIR.i.b
 
 -- Usamos N+1 barcos para especificar, donde N es el numero de torres
-DK_BARCO.i =
-    (objgiroa.i -> DK_BARCO.i | objgiroh.i -> DK_BARCO.i |
-    objarriba.i -> DK_BARCO.i | objabajo.i -> DK_BARCO.i) ||
-    deteccion.i -> afuera.i -> DK_BARCO.i
+DK_BARCO.i = DK_BARCO.1.i || DK_BARCO.2.i
+DK_BARCO.1.i = 
+    (objgiroa.i -> DK_BARCO.1.i | objgiroh.i -> DK_BARCO.1.i |
+    objarriba.i -> DK_BARCO.1.i | objabajo.i -> DK_BARCO.1.i)
+DK_BARCO.2.i = deteccion.i ->
+    (afuera.i -> DK_BARCO.2.i |
+    disparar.i -> DK_BARCO.2.i |
+    abandonar.i -> DK_BARCO.2.i)
 DK_BARCOS  = DK_BARCO.1 || DK_BARCO.2 || DK_BARCO.3
 
 SPEC = TIMER.1 || RP || DK_BARCOS ||
@@ -73,7 +77,7 @@ deteccion.1
 start
 disponible.2
 stop
-objetivo.2.1
+objetivo.2.1 -- el radar 2 sigue a 1
 deteccion.3
 start
 disponible.1
@@ -92,6 +96,6 @@ inactivo.2
 objgiroa.3
 giroa.1
 objgiroh.3
-giroh.1
+giroh.1     -- llega hasta aca
 fuera.3
 inactivo.1
