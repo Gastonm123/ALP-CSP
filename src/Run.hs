@@ -231,9 +231,15 @@ inAlpha' e = go
                     substData = (SubstLoop q (repeat (-1)))
                     (SubstLoop p1 _) = execState substLoop substData
                     in go p1
+                {- Marcamos todos los parametros ligados al evento como:
+                -    ab.i -> NT.i
+                - donde el parametro i esta ligado al evento ab.i
+                -}
         go (ByName           n) = do
-            if any isInductiveOrUndef (params n) then
+            if any isInductiveOrMarked (params n) then
                 return False
+                -- no tiene sentido buscar su alfabeto porque no esta
+                -- completamente valuado
             else do
                 seen <- get
                 if n `elem` seen then
@@ -242,8 +248,8 @@ inAlpha' e = go
                     put (n:seen)
                     p <- lift (getProc n)
                     go p
-        isInductiveOrUndef (Inductive _ _) = True
-        isInductiveOrUndef (Base n) = (n == -1)
+        isInductiveOrMarked (Inductive _ _) = True
+        isInductiveOrMarked (Base n) = (n == -1)
         asVariable (IVar v) = Just v
         asVariable (IPlus v _) = Just v 
         asVariable (IVal _) = Nothing
