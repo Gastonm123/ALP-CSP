@@ -1,6 +1,7 @@
 all: build
 
 build: $(HS_FILES)
+	hpack
 	cabal build
 
 test: build .FORCE

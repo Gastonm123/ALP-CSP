@@ -13,6 +13,7 @@ import Lang
 import Lexer
 }
 
+-- parseFile :: String -> LineNumber -> ParseResult a
 %name parseFile Program
 %name parseInteractive Sentence
 
@@ -56,7 +57,7 @@ Program :: { SProg }
      : Sentences '-O-' Trace    { SProg $1 $3 }
      | Sentences                { SProg $1 [] }
 
-Trace  :: { [SEvent] }
+Trace  :: { [Event] }
        : TraceEv Trace          { $1 : $2 }
        | TraceEv                { [$1] }
        | {- empty -}            { [] }

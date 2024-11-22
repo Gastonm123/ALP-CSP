@@ -2,10 +2,11 @@
 {-# HLINT ignore "Redundant bracket" #-}
 {-# HLINT ignore "Use lambda-case" #-}
 {-# HLINT ignore "Avoid lambda using `infix`" #-}
+{-# HLINT ignore "Use newtype instead of data" #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE InstanceSigs #-}
-module Run (run, accept) where
+module Run (run, accept, Conf(..)) where
 {- Exporta run para ejecucion desde CLI y accept para modo interactivo -}
 
 import Lang
@@ -16,38 +17,44 @@ import Control.Monad.Writer
 import Data.Maybe
 import Data.Functor
 import Control.Monad
+import Debug.Trace (trace, traceM)
 
-run :: Prog -> IO ()
+run :: Prog -> ReaderT Conf IO ()
 run (Prog [] _) = do
-    putStrLn "! Error: El parser generó un programa vacío"
+    liftIO (putStrLn "! Error: El parser generó un programa vacío")
 run (Prog sents []) = do
-    putStrLn "> Especificacion cargada sin trazas para ejecutar."
-    putStrLn "> Ast:"
-    mapM_ print sents
+    liftIO (putStrLn "> Especificacion cargada sin trazas para ejecutar.")
+    liftIO (putStrLn "> Ast:")
+    mapM_ (liftIO . print) sents
 run (Prog sents tr) = do
     let (Assign _ espec) = head (reverse sents)
     {- La ultima declaracion del archivo es la especificacion -}
-    let (result, acceptedEvs) = (evalState . runWriterT . runExceptT)
+    (result, acceptedEvs) <- (evalStateT . runWriterT . runExceptT)
             (mapM_ handleEvent tr) espec
     {- Diversion con monadas :D -}
     case result of
         (Left  err) -> do
-                putStrLn ("! Error: "++err)
-                putStrLn ("! Eventos aceptados: "++show acceptedEvs)
+                liftIO (putStrLn ("! Error: "++err))
+                liftIO (putStrLn ("! Eventos procesados: "++show acceptedEvs))
         (Right _)   -> do
-                putStrLn  "> OK!"
-                putStrLn ("> La especificacion acepto todos los eventos de la"
-                    ++" traza")
+                liftIO (putStrLn  "> OK!")
+                liftIO (putStrLn ("> La especificacion acepto todos los eventos"
+                    ++ " de la traza"))
     where
-        handleEvent :: Event -> ExceptT String (WriterT [Event] (State Proc)) ()
+        handleEvent :: Event -> MonadHandler
         handleEvent trEvent = do
             espec1 <- get
             tell [trEvent]
+            isDebug <- asks debug
+            when isDebug (do
+                liftIO (putStrLn ("? Siguiente evento: "++show trEvent))
+                liftIO (putStrLn ("? Estado especificacion:"))
+                liftIO (print espec1))
             let accOrFailed = (runReader . runExceptT)
                     (accept espec1) (RunData sents trEvent)
             case accOrFailed of
                 Left err -> throwError err
-                Right Nothing -> throwError ("Event rejected "++show trEvent)
+                Right Nothing -> throwError ("Evento rechazado ("++show trEvent++")")
                 Right (Just espec2) -> put espec2
 
 data RunData =
@@ -58,70 +65,20 @@ data RunData =
 
 type MonadRun = ExceptT String (Reader RunData)
 
+type MonadHandler =
+        ExceptT String
+        (WriterT [Event]
+        (StateT Proc
+        (ReaderT Conf IO))) ()
+
 newtype TraceEvent = TraceEvent { deTraceEvent :: Event }
 
 data SubstLoop a = SubstLoop { substProc :: Proc, substVars :: [a] }
 
--- Acciones de la monada
-
--- La referencia que se busca DEBE tener todos los parametros con valor.
--- Si todas las sentencias son cerradas entonces podemos asegurarlo.
-getProc :: ProcRef -> MonadRun Proc
-getProc pRef = do
-    sents <- asks rSentences
-    case findProc sents of
-        [s] -> do
-            let (Assign _ p, pars) = s
-            let parsOfRef = params pRef
-            let substLoop = (forM_ parsOfRef (\i -> case i of
-                    (Inductive n _) -> do
-                        p1 <- gets substProc
-                        vars <- gets substVars
-                        let p2 = subst n (head vars) p1
-                        put (SubstLoop p2 (tail vars))
-                        {- no es posible fallar en esta parte por head o tail
-                           porque los reemplazos para las variables se
-                           obtuvieron uno por uno desde los parametros -}
-                    (Base _) -> return ())) :: State (SubstLoop Int) ()
-            let (SubstLoop p1 _) = execState substLoop (SubstLoop p pars)
-            return p1
-        (_:_) -> throwError ("El proceso "++show pRef++" es ambiguo.")
-        []    -> throwError ("El proceso "++show pRef++" no esta definido.")
-    where
-        findProc (sent:ss) = case matchRefInSent pRef sent of
-            (True, pars) -> (sent, pars) : findProc ss
-            (False, _) -> findProc ss
-        findProc [] = []
-        matchRefInSent p (Assign q _) =
-            if  (procName p == procName q) &&
-                (length (params p) == length (params q))
-            then runWriter (matchParams (params p) (params q))
-            else (False, [])
-        matchParams :: [Parameter] -> [Parameter] -> Writer [Int] Bool
-        matchParams [Base v1] [Base v2] =
-            if (v1 == v2) then
-                return True
-            else
-                return False
-        matchParams [Base v1] [Inductive _ c] =
-            if v1 - c >= 0 then do
-                tell [v1-c]
-                return True
-            else
-                return False
-        matchParams ((Base v1):is1) ((Base v2):is2) =
-            if (v1 == v2) then
-                matchParams is1 is2
-            else
-                return False
-        matchParams ((Base v1):is1) ((Inductive _ c):is2) =
-            if v1 - c >= 0 then do
-                tell [v1-c]
-                matchParams is1 is2
-            else
-                return False
-        matchParams _ _ = return False
-
+data Conf =
+    Conf {
+        debug :: Bool
+    }
 
 accept :: Proc -> MonadRun (Maybe Proc)
 accept (InternalChoice p q) = do
@@ -176,6 +133,7 @@ accept Stop = return Nothing
 accept Skip = return Nothing
 accept (Prefix e1 p) = do
     e2 <- asks rEvent
+    -- trace (show [e1,e2]) (return ())
     case matchEvents (TraceEvent e2) e1 of
         (True, is) -> do
             let isOfPrefix = indices e1
@@ -200,6 +158,7 @@ accept (Prefix e1 p) = do
             return (Just p1)
         (False, _) -> return Nothing
 accept (Parallel p q) = do
+    -- trace (show [p,q]) (return ())
     ev <- asks rEvent
     nextp <- accept p
     nextq <- accept q
@@ -248,6 +207,68 @@ inAlpha' e = go
                 p <- lift (getProc n)
                 go p
 
+-- La referencia que se busca DEBE tener todos los parametros con valor.
+-- Si todas las sentencias son cerradas entonces podemos asegurarlo.
+getProc :: ProcRef -> MonadRun Proc
+getProc pRef = do
+    sents <- asks rSentences
+    case findProc sents of
+        [s] -> do
+            let (Assign _ p, pars) = s
+            let parsOfRef = params pRef
+            let substLoop = (forM_ parsOfRef (\i -> case i of
+                    (Inductive n _) -> do
+                        p1 <- gets substProc
+                        vars <- gets substVars
+                        let p2 = subst n (head vars) p1
+                        put (SubstLoop p2 (tail vars))
+                        {- no es posible fallar en esta parte por head o tail
+                           porque los reemplazos para las variables se
+                           obtuvieron uno por uno desde los parametros -}
+                    (Base _) -> return ())) :: State (SubstLoop Int) ()
+            let (SubstLoop p1 _) = execState substLoop (SubstLoop p pars)
+            return p1
+        (_:_) -> throwError ("El proceso "++show pRef++" es ambiguo.")
+        []    -> throwError ("El proceso "++show pRef++" no esta definido.")
+    where
+        findProc (sent:ss) = case matchRefInSent pRef sent of
+            (True, pars) -> (sent, pars) : findProc ss
+            (False, _) -> findProc ss
+        findProc [] = []
+        matchRefInSent p (Assign q _) =
+            if (procName p == procName q) &&
+               (length (params p) == length (params q)) then
+                if null (params p) then
+                    (True, [])
+                else
+                    runWriter (matchParams (params p) (params q))
+            else
+                (False, [])
+        matchParams :: [Parameter] -> [Parameter] -> Writer [Int] Bool
+        matchParams [Base v1] [Base v2] =
+            if (v1 == v2) then
+                return True
+            else
+                return False
+        matchParams [Base v1] [Inductive _ c] =
+            if v1 - c >= 0 then do
+                tell [v1-c]
+                return True
+            else
+                return False
+        matchParams ((Base v1):is1) ((Base v2):is2) =
+            if (v1 == v2) then
+                matchParams is1 is2
+            else
+                return False
+        matchParams ((Base v1):is1) ((Inductive _ c):is2) =
+            if v1 - c >= 0 then do
+                tell [v1-c]
+                matchParams is1 is2
+            else
+                return False
+        matchParams _ _ = return False
+
 -- SIEMPRE se matchea una traza contra un evento de especificacion.
 -- Los eventos de las trazas tienen todos los indices valuados.
 -- El resultado de matchear incluye el reemplazo de las variables
@@ -255,10 +276,14 @@ inAlpha' e = go
 -- 
 matchEvents :: TraceEvent -> Event -> (Bool, [Val])
 matchEvents (TraceEvent e1) e2 =
-    if  (eventName e1 == eventName e2) &&
-        (length (indices e1) == length (indices e2))
-    then runWriter (matchIndices (indices e1) (indices e2))
-    else (False, [])
+    if (eventName e1 == eventName e2) &&
+       (length (indices e1) == length (indices e2)) then
+        if null (indices e1) then
+            (True, [])
+        else
+            runWriter (matchIndices (indices e1) (indices e2))
+    else
+        (False, [])
     where
         matchIndices :: [Index] -> [Index] -> Writer [Val] Bool
         matchIndices [IVal v1] [IVal v2] =

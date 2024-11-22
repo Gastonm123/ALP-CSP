@@ -13,6 +13,8 @@ CLEAR = SKIP []
      free.3 -> CLEAR |
      free.4 -> CLEAR)
 
+SPEC = MANAGER || LL
+
 ============== O ==============
 
 put.5

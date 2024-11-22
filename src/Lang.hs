@@ -4,6 +4,7 @@
 {-# HLINT ignore "Redundant bracket" #-}
 module Lang (Val(..), SProg(..), SIndex(..), SSentence(..), BinOp, SParameter(..), SProcRef(..), SProc(..), SEvent(..), ProcRef(..), Parameter(..), Event(..), Index(..), Proc (..), Sentence (..), Prog (..)) where
 import Data.List (intercalate)
+import Options.Applicative.Help.Pretty
 
 -- Programa
 data Prog =
@@ -63,7 +64,7 @@ data Index
 data Val
   = Char Char
   | Int Int
-  deriving (Show, Eq)
+  deriving (Eq)
 
 
 
@@ -86,7 +87,7 @@ data SProcRef =
 data SEvent =
   SEvent {
     seventName :: String,
-    sindices :: [Index]
+    sindices :: [SIndex]
   }
 
 -- Procesos azucarados
@@ -128,6 +129,10 @@ type BinOp = String
 -- data Generic = SentG Sentence | ProcG Proc | Error String deriving Show -- similar a un OR
 
 
+instance Show Val where
+  show (Int n) = show n
+  show (Char c) = "\"" ++ [c] ++ "\""
+
 instance Show Parameter where
   show (Inductive n c) = n ++ show c
   show (Base n) = show n
@@ -161,6 +166,11 @@ instance Show SIndex where
 instance Show SEvent where
   show (SEvent n i) = if not (null i) then n ++ "." ++ intercalate "." (map show i) else n
 
+instance Pretty ProcRef where
+  pretty = pretty . show
+
+instance Pretty Event where
+  pretty = pretty . show
 
 -- Igualdad de eventos y procesos:
 -- Si existe una asignacion donde son iguales, entonces son iguales
