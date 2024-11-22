@@ -30,7 +30,7 @@ run (Prog sents []) = do
 run (Prog sents tr) = do
     let (Assign _ espec) = head (reverse sents)
     {- La ultima declaracion del archivo es la especificacion -}
-    (result, acceptedEvs) <- (evalStateT . runWriterT . runExceptT)
+    ((result, acceptedEvs), espec1) <- (runStateT . runWriterT . runExceptT)
             (mapM_ handleEvent tr) espec
     {- Diversion con monadas :D -}
     case result of
@@ -38,6 +38,10 @@ run (Prog sents tr) = do
                 liftIO (putStrLn ("! Error: "++err))
                 liftIO (putStrLn ("! Eventos procesados: "++show acceptedEvs))
         (Right _)   -> do
+                isDebug <- asks debug
+                when (isDebug) (do
+                    liftIO (putStrLn "? Estado final de la especificacion:")
+                    liftIO (render (prettyPrint espec1)))
                 liftIO (putStrLn  "> OK!")
                 liftIO (putStrLn ("> La especificacion acepto todos los eventos"
                     ++ " de la traza"))
@@ -112,7 +116,9 @@ accept alt@(LabeledAlt p q) = do
             ev <- asks rEvent
             throwError ("El evento "++show ev++" fue aceptado mas de una vez"++
                 " en una alternativa: "++show alt)
-accept (Sequential Skip q) = accept q
+accept (Sequential Stop p) = return Nothing
+accept (Sequential p Skip) = accept p
+accept (Sequential Skip p) = accept p
 accept (Sequential p q) = do
     nextp <- accept p
     case nextp of
@@ -159,6 +165,10 @@ accept (Prefix e1 p) = do
             (SubstLoop p1 _) <- execStateT substLoop (SubstLoop p is)
             return (Just p1)
         (False, _) -> return Nothing
+accept (Parallel Stop q) = return Nothing
+accept (Parallel q Stop) = return Nothing
+accept (Parallel Skip p) = accept p
+accept (Parallel p Skip) = accept p
 accept (Parallel p q) = do
     ev <- asks rEvent
     nextp <- accept p
@@ -167,14 +177,20 @@ accept (Parallel p q) = do
         (Nothing, Nothing) -> return Nothing
         (Just p', Nothing) -> do
             inQ <- inAlpha ev q
-            if inQ
-                then return Nothing
-                else return (Just (Parallel p' q))
+            if inQ then
+                return Nothing
+            else case q of
+                Stop -> return (Just p')
+                Skip -> return (Just p')
+                _    -> return (Just (Parallel p' q))
         (Nothing, Just q') -> do
             inP <- inAlpha ev p
-            if inP
-                then return Nothing
-                else return (Just (Parallel p q'))
+            if inP then
+                return Nothing
+            else case p of
+                Stop -> return (Just q')
+                Skip -> return (Just q')
+                _    -> return (Just (Parallel p q'))
         (Just p', Just q') -> return (Just (Parallel p' q'))
 
 -- Utilidades
@@ -212,9 +228,11 @@ inAlpha' e = go
 -- Si todas las sentencias son cerradas entonces podemos asegurarlo.
 getProc :: ProcRef -> MonadRun Proc
 getProc pRef = do
+    -- traceM (show pRef)
     sents <- asks rSentences
     case findProc sents of
         [s] -> do
+            -- traceM (show s)
             let (Assign pRef1 p, pars) = s
             let parsOfMatch = params pRef1
             let substLoop = (forM_ parsOfMatch (\i -> case i of
