@@ -219,7 +219,8 @@ inAlpha' e = go
         go (Prefix        e1 q) =
             case matchEvents (TraceEvent e) e1 of
                 (True,  _) -> return True
-                (False, _) -> let
+                (False, _) -> go q
+                    {-let
                     is = indices e1
                     varsOfEvent = mapMaybe asVariable is
                     substLoop = (forM_ varsOfEvent (\n -> do
@@ -232,7 +233,7 @@ inAlpha' e = go
                         ) :: State (SubstLoop Int) ()
                     substData = (SubstLoop q (repeat (-1)))
                     (SubstLoop p1 _) = execState substLoop substData
-                    in go p1
+                    in go p1-}
                 {- Marcamos todos los parametros ligados al evento como:
                 -    ab.i -> NT.i
                 - donde el parametro i esta ligado al evento ab.i
