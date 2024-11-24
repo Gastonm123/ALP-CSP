@@ -47,7 +47,7 @@ TEMPORIZADOR.t = temporizador.t ->
                 | aumentar_tiempo.5 -> TEMPORIZADOR.(t+5)
                 | disminuir_tiempo.5 -> TEMPORIZADOR.(t-5)
                 | puerta_abierta -> TEMPORIZADOR_PARADO.t)
-TEMPORIZADOR.(t+121) = TEMPORIZADOR.120 -- no seguir infinitamente
+STOP TEMPORIZADOR.(t+121) = TEMPORIZADOR.120 -- no seguir infinitamente
 
 --
 TEMPORIZADOR_PARADO = TEMPORIZADOR_PARADO.0 /\ stop -> TEMPORIZADOR_PARADO
@@ -63,7 +63,7 @@ TEMPORIZADOR_PARADO.t
     | get_time!t -> TEMPORIZADOR_PARADO.t
     | start -> TEMPORIZADOR.t
     | tick -> TEMPORIZADOR_PARADO.t      -- ignore
-TEMPORIZADOR_PARADO.(t+121) = TEMPORIZADOR_PARADO.120  -- no seguir infinitamente
+STOP TEMPORIZADOR_PARADO.(t+121) = TEMPORIZADOR_PARADO.120  -- no seguir infinitamente
 
 
 -- hora_actual ~ el display empieza a mostrar la hora actual
@@ -132,3 +132,105 @@ SPEC = POTENCIAS || PUERTA || START || DK || DISPLAY || TEMPORIZADOR_PARADO
 
 ========================= O ============================
 
+-- setup inicial
+hora_actual
+
+-- traza
+giro_horario
+aumentar_tiempo.5
+giro_horario
+aumentar_tiempo.5
+giro_antihorario
+disminuir_tiempo.5
+boton_potencia.1
+potencia.1
+press_start
+get_time.5
+start
+
+temporizador.5
+display_tiempo.5
+tick
+temporizador.4
+display_tiempo.4
+tick
+temporizador.3
+display_tiempo.3
+tick
+temporizador.2
+display_tiempo.2
+tick
+temporizador.1
+display_tiempo.1
+tick
+temporizador.0
+display_tiempo.0
+final_temporizador
+hora_actual
+
+press_start
+beep
+giro_horario
+aumentar_tiempo.5
+press_start        -- ignored
+boton_potencia.4
+potencia.4
+press_start
+get_time.5
+start
+
+temporizador.5
+display_tiempo.5
+puerta_abierta
+press_start        -- ignored
+puerta_cerrada
+puerta_abierta
+puerta_cerrada
+press_start
+start
+tick
+temporizador.4
+display.4
+
+giro_antihorario
+disminuir_tiempo.5
+temporizador.0
+final_temporizador
+hora_actual
+
+giro_horario
+aumentar_tiempo.5
+boton_potencia.2
+potencia.2
+press_start
+get_time.5
+start
+temporizador.5
+display_tiempo.5
+tick
+temporizador.4
+display_tiempo.4
+boton_potencia.3
+potencia.3
+ajustar_potencia_cocinando.3
+tick
+temporizador.3
+display_tiempo.3
+tick
+temporizador.2
+display_tiempo.2
+tick
+temporizador.1
+display_tiempo.1
+press_stop
+stop
+
+giro_antihorario
+disminuir_tiempo.5
+giro_horario
+aumentar_tiempo.5
+press_stop
+stop
+press_start
+get_time.0
+beep

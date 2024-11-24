@@ -17,6 +17,11 @@ elabSent (SAssign pRef p) = let
     name = sprocName pRef
     (normParams, normP) = runState (mapM elabParam pars) p
     in (Assign (ProcRef name normParams) (directElabProc normP))
+elabSent (SLimit pRef p) = let
+    pars = sparams pRef
+    name = sprocName pRef
+    (normParams, normP) = runState (mapM elabParam pars) p
+    in (Limit (ProcRef name normParams) (directElabProc normP))
 
 type IndexName = String
 

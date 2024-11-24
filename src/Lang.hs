@@ -45,6 +45,7 @@ data Proc
 -- Sentencias
 data Sentence
   = Assign ProcRef Proc
+  | Limit ProcRef Proc
   deriving Show
 
 
@@ -108,6 +109,7 @@ data SProc
 -- Sentencias azucaradas
 data SSentence
   = SAssign SProcRef SProc
+  | SLimit SProcRef SProc
   deriving Show
 
 -- Parametros azucarados

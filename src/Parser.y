@@ -119,6 +119,7 @@ Sentences :: { [SSentence] }
 
 Sentence :: { SSentence }
          : ProcRef '=' Proc       { SAssign $1 $3 }
+         | STOP ProcRef '=' Proc  { SLimit $2 $4 }
 
 Proc :: { SProc }
      : Event '->' Proc           { SPrefix $1 $3 }
