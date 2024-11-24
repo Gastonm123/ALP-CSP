@@ -43,7 +43,7 @@ SEGUIR.i.b  =
     objarriba.b -> arriba.i -> SEGUIR.i.b |
     objabajo.b -> abajo.i -> SEGUIR.i.b |
     objgiroa.b -> giroa.i -> SEGUIR.i.b |
-    objgiroh.b -> giroa.i -> SEGUIR.i.b
+    objgiroh.b -> giroh.i -> SEGUIR.i.b
 
 -- Usamos N+1 barcos para especificar, donde N es el numero de torres
 DK_BARCO.i = DK_BARCO.1.i || DK_BARCO.2.i

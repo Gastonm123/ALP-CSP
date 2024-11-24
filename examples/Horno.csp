@@ -1,0 +1,21 @@
+{- El horno microondas posee un panel de control semejante a algunos modelos populares.
+Los botones numerados del 1 al 4 se utilizan para fijar la potencia de coccion. La perilla
+circular puede girar en ambos sentidos y sirve para fijar el tiempo de coccion: si lo hace
+en sentido horario aumenta el tiempo de a 5 segundos, en el sentido contrario disminuye
+en la misma cantidad.
+Normalmente, en el display se muestra la hora actual pero cuando se fija el tiempo
+de coccion se la reemplaza por el tiempo que el usuario selecciona a medida que hace
+girar la perilla. Una vez que detiene la perilla, debe seleccionar una de las potencias
+de coccion y finalmente pulsar el boton Start. Al hacerlo la puerta debe estar cerrada
+y en el display se comienza a decrementar el tiempo de a un segundo.
+- Si se pulsa Stop se borra el tiempo de coccion, se resetea la seleccion de la potencia
+y se vuelve a mostrar la hora.
+- Si durante la coccion se abre la puerta, se detiene el tiempo de coccion y si se
+vuelve a cerrar se debera pulsar Start nuevamente para continuar la coccion desde
+el punto donde se la abandono.
+- Se puede cambiar la potencia de coccion mientras se esta cocinando.
+- Si durante la coccion el usuario hace girar la perilla, el tiempo de coccion debe
+actualizarse.
+La coccion se detendra automaticamente cuando el tiempo llegue a cero, luego de lo
+cual se volvera a mostrar la hora y se reseteara la potencia seleccionada.
+-}

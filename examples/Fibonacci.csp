@@ -1,7 +1,7 @@
 FIBO.0 = call.0 -> SKIP
 FIBO.1 = call.1 -> SKIP
-FIBO.i = call.i -> call.(i-1) -> call.(i-2) -> FIBO.i
-S = FIBO.0 || FIBO.1 || FIBO.2 || FIBO.3 || FIBO.4 || FIBO.5
+FIBO.i = call.i -> (FIBO.(i-1); FIBO.(i-2))
+S = FIBO.5
 
 ================== O ==================
 

@@ -20,6 +20,8 @@ SPEC = MANAGER || LL
 put.5
 malloc.1
 save.5
+put.12
+memfull
 put.3
 malloc.2
 save.3

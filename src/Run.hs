@@ -15,10 +15,12 @@ import Control.Monad.Reader
 import Control.Monad.Except
 import Control.Monad.Writer
 import Data.Maybe
+import Data.List
 import Data.Functor
 import Control.Monad
 import Debug.Trace (trace, traceM)
 import PrettyPrint
+
 
 run :: Prog -> ReaderT Conf IO ()
 run (Prog [] _) = do
@@ -37,7 +39,8 @@ run (Prog sents tr) = do
     case result of
         (Left  err) -> do
                 liftIO (putStrLn ("! Error: "++err))
-                liftIO (putStrLn ("! Eventos procesados: "++show acceptedEvs))
+                liftIO (putStrLn ("! Eventos procesados: "
+                    ++ ((intercalate ", " . map show) acceptedEvs)))
         (Right _)   -> do
                 isDebug <- asks debug
                 when (isDebug) (do
@@ -179,8 +182,7 @@ accept (Parallel p q) = do
         (Just p', Nothing) -> do
             inQ <- inAlpha ev q
             if inQ then do
-                traceM ((show . prettyPrint) q)
-                trace "-- HOLA MUNDO" $ return Nothing
+                return Nothing
             else case q of
                 Stop -> return (Just p')
                 Skip -> return (Just p')
@@ -188,8 +190,7 @@ accept (Parallel p q) = do
         (Nothing, Just q') -> do
             inP <- inAlpha ev p
             if inP then do
-                traceM ((show . prettyPrint) p)
-                trace "-- HOLA MUNDO" $ return Nothing
+                return Nothing
             else case p of
                 Stop -> return (Just q')
                 Skip -> return (Just q')
