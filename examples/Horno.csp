@@ -23,32 +23,31 @@ cual se volvera a mostrar la hora y se reseteara la potencia seleccionada.
 --
 TEMPORIZADOR.0 = temporizador.0 -> final_temporizador -> TEMPORIZADOR_PARADO.0
 TEMPORIZADOR.1 = temporizador.1 -> 
-                (tick -> TEMPORIZADOR.0
+                ( tick -> TEMPORIZADOR.0
                 | disminuir_tiempo.5 -> TEMPORIZADOR.0
                 | aumentar_tiempo.5 -> TEMPORIZADOR.(t+5)
-                | puerta_abierta -> PUERTA_TEMPORIZADOR.1)
+                | puerta_abierta -> TEMPORIZADOR_PARADO.1)
 TEMPORIZADOR.2 = temporizador.2 -> 
-                (tick -> TEMPORIZADOR.1
+                ( tick -> TEMPORIZADOR.1
                 | disminuir_tiempo.5 -> TEMPORIZADOR.0
                 | aumentar_tiempo.5 -> TEMPORIZADOR.(t+5)
-                | puerta_abierta -> PUERTA_TEMPORIZADOR.2)
+                | puerta_abierta -> TEMPORIZADOR_PARADO.2)
 TEMPORIZADOR.3 = temporizador.3 ->
-                (tick -> TEMPORIZADOR.2
+                ( tick -> TEMPORIZADOR.2
                 | disminuir_tiempo.5 -> TEMPORIZADOR.0
                 | aumentar_tiempo.5 -> TEMPORIZADOR.(t+5)
-                | puerta_abierta -> PUERTA_TEMPORIZADOR.3)
+                | puerta_abierta -> TEMPORIZADOR_PARADO.3)
 TEMPORIZADOR.4 = temporizador.4 ->
-                (tick -> TEMPORIZADOR.3
+                ( tick -> TEMPORIZADOR.3
                 | disminuir_tiempo.5 -> TEMPORIZADOR.0
                 | aumentar_tiempo.5 -> TEMPORIZADOR.(t+5)
-                | puerta_abierta -> PUERTA_TEMPORIZADOR.4)
+                | puerta_abierta -> TEMPORIZADOR_PARADO.4)
 TEMPORIZADOR.t = temporizador.t ->
-                (tick -> TEMPORIZADOR.(t-1)
+                ( tick -> TEMPORIZADOR.(t-1)
                 | aumentar_tiempo.5 -> TEMPORIZADOR.(t+5)
                 | disminuir_tiempo.5 -> TEMPORIZADOR.(t-5)
-                | puerta_abierta -> PUERTA_TEMPORIZADOR.t)
+                | puerta_abierta -> TEMPORIZADOR_PARADO.t)
 TEMPORIZADOR.(t+121) = TEMPORIZADOR.120 -- no seguir infinitamente
-PUERTA_TEMPORIZADOR.t = puerta_cerrada -> start -> TEMPORIZADOR.t
 
 --
 TEMPORIZADOR_PARADO = TEMPORIZADOR_PARADO.0 /\ stop -> TEMPORIZADOR_PARADO
@@ -56,18 +55,22 @@ TEMPORIZADOR_PARADO.0
     = aumentar_tiempo.5 -> TEMPORIZADOR_PARADO.5
     | disminuir_tiempo.5 -> TEMPORIZADOR_PARADO.0
     | get_time!0 -> TEMPORIZADOR_PARADO.0
-    | start -> TEMPORIZADOR_PARADO.0)     -- ignore
+    | start -> TEMPORIZADOR_PARADO.0     -- ignore
+    | tick -> TEMPORIZADOR_PARADO.0      -- ignore
 TEMPORIZADOR_PARADO.t
     = aumentar_tiempo.5 -> TEMPORIZADOR_PARADO.(t+5)
     | disminuir_tiempo.5 -> TEMPORIZADOR_PARADO.(t-5)
     | get_time!t -> TEMPORIZADOR_PARADO.t
-    | start -> TEMPORIZADOR.t)
+    | start -> TEMPORIZADOR.t
+    | tick -> TEMPORIZADOR_PARADO.t      -- ignore
 TEMPORIZADOR_PARADO.(t+121) = TEMPORIZADOR_PARADO.120  -- no seguir infinitamente
 
 
 -- hora_actual ~ el display empieza a mostrar la hora actual
 -- display_tiempo.i ~ el display muestra que el temporizador con i segundos
-DISPLAY   = hora_actual -> temporizador.t -> DISPLAY.t
+DISPLAY   = hora_actual -> DISPLAY_TIEMPO 
+DISPLAY_TIEMPO = temporizador.t -> DISPLAY.t
+               | stop -> DISPLAY_TIEMPO    -- ignore
 DISPLAY.t = display_tiempo.t -> 
     ( temporizador.k -> DISPLAY.k
     | final_temporizador -> DISPLAY
@@ -76,11 +79,17 @@ DISPLAY.t = display_tiempo.t ->
 --
 START = PRESS_START /\ stop -> START
 PRESS_START = press_start -> get_time?v -> START.v
+            | puerta_abierta -> PRESS_START -- ignore
+            | puerta_cerrada -> PRESS_START -- ignore
 START.0     = beep  -> PRESS_START
 START.(t+1) = start -> STARTED
-STARTED = final_temporizador -> PRESS_START
-        | puerta_abierta -> puerta_cerrada -> start -> STARTED
-        | press_start -> STARTED     -- ignore
+STARTED   = final_temporizador -> PRESS_START
+          | puerta_abierta -> STARTED.1
+          | press_start -> STARTED     -- ignore
+STARTED.1 = puerta_cerrada -> STARTED.2
+          | press_start -> STARTED.1   -- ignore
+STARTED.2 = puerta_abierta -> STARTED.1
+          | press_start -> start -> STARTED
 
 -- PUERTA.0 ~ la puerta esta abierta, PUERTA.1 ~ la puerta esta cerrada
 PUERTA = PUERTA.1    -- la puerta empieza cerrada
@@ -94,7 +103,7 @@ POTENCIAS.(p+1) = potencia.i -> POTENCIAS.i
     | start -> POTENCIAS_STARTED.(p+1)
 POTENCIAS_STARTED.(p+1) 
     = final_temporizador -> POTENCIAS.0
-    | potencia.i -> ajustar_potencia_cocinando.i -> POTENCIAS_STARTED.i)
+    | potencia.i -> ajustar_potencia_cocinando.i -> POTENCIAS_STARTED.i
 
 -- Hay 4 botones de potencia
 DK_POTENCIA.i = DK_POTENCIA.i.1
@@ -111,7 +120,10 @@ DK_PERILLA = giro_horario -> aumentar_tiempo.5 -> DK_PERILLA
     | giro_antihorario -> disminuir_tiempo.5 -> DK_PERILLA
 
 --
-DK_START = press_start -> (start -> DK_START | beep -> DK_START)
+DK_START = press_start -> DK_START.1 
+DK_START.1 = start -> DK_START
+           | beep -> DK_START
+           | press_start -> DK_START.1  -- ignore
 
 --
 DK = DK_STOP || DK_POTENCIAS || DK_PERILLA || DK_START
