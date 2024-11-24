@@ -58,7 +58,8 @@ run (Prog sents tr) = do
             when isDebug (do
                 liftIO (putStrLn ("? Siguiente evento: "++show trEvent))
                 liftIO (putStrLn ("? Estado especificacion:"))
-                liftIO (render (prettyPrint espec1)))
+                liftIO (render (prettyPrint espec1))
+                liftIO (putStrLn ""))
             let accOrFailed = (runReader . runExceptT)
                     (accept espec1) (RunData sents trEvent)
             case accOrFailed of
