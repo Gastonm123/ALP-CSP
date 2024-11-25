@@ -1,7 +1,7 @@
 MEMO.i = put.i?v -> (READ.i [] MEMO.i)   -- un valor puede sobreescribirse
 READ.i = get.i!v -> MEMO.i
 S = MEMO.1 || MEMO.2 || MEMO.3 || MEMO.4 || MEMO.5 || 
-    MEMO.6 || MEMO.7 || MEMO.8 || MEMO.9 || MEMO.10 || MEMO.11 -- descomentar para que la traza pase
+    MEMO.6 || MEMO.7 || MEMO.8 || MEMO.9 || MEMO.10 -- || MEMO.11 -- descomentar para que la traza pase
 
 =============== O ==============
 
