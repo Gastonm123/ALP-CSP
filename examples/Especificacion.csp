@@ -23,8 +23,9 @@ donde ang es un angulo.
 -}
 
 -- Uso: timer de t*100 milisegundos
-TIMER.t    = start -> ((WAIT.t; TIMER.t) /\ stop -> TIMER.t) |
-    tick -> TIMER.t
+TIMER.t    = TIMER.t.1 /\ stop -> TIMER.t
+TIMER.t.1  = start -> (WAIT.t; TIMER.t.1)
+           | tick -> TIMER.t.1
 --
 WAIT.0     = timeout -> SKIP
 WAIT.(t+1) = tick -> WAIT.t
@@ -80,7 +81,7 @@ RANGO.j.2 = abandonar.j -> RANGO.j.1
 EN_RANGO = RANGO.1 || RANGO.2 || RANGO.3
 
 --
-CANION.i = disparar.i.v -> descargar.i -> recargar.i -> CANION.i
+CANION.i = torre_disparar.i.j -> descargar.i -> recargar.i -> CANION.i
 CANIONES = CANION.1 || CANION.2
 
 --
@@ -103,7 +104,8 @@ disponible.1
 stop
 tracking.1
 objetivo.1.1
-disparar.1.1
+disparar.1
+torre_disparar.1.1
 descargar.1
 recargar.1
 inactivo.1
@@ -151,14 +153,14 @@ disponible.2
 stop
 tracking.2
 objetivo.2.2
-abajo.2
-torre_abajo.2.2
+objabajo.2
+abajo.2.2
 disparar.2
 torre_disparar.2.2
 objgiroa.3
-torre_giroa.1.3
+giroa.1.3
 objgiroh.3
-torre_giroh.1.3
+giroh.1.3
 fuera.3
 torre_fuera.1.3
 inactivo.1

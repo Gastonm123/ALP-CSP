@@ -21,6 +21,7 @@ import Data.Functor
 import Control.Monad
 import Debug.Trace (trace, traceM, traceShow, traceShowM)
 import PrettyPrint
+import Prettyprinter
 import GHC.Utils.Monad
 
 
@@ -45,8 +46,12 @@ run (Prog sents tr) = do
                     (mapM_ handleEvent tr) espec
             {- Diversion con monadas :D -}
             case result of
-                (Left  err) -> do
+                (Left  (err, razones)) -> do
                         liftIO (putStrLn ("! Error: "++err))
+                        unless (null razones) (do
+                            liftIO (putStrLn "! Razon:")
+                            liftIO ((render . indent 4 . vsep . map pretty)
+                                    razones))
                         liftIO (putStrLn ("! Eventos procesados: "
                             ++ ((intercalate ", " . map show) acceptedEvs)))
                 (Right _)   -> do
@@ -74,9 +79,10 @@ run (Prog sents tr) = do
             let accOrFailed = (runReader . runExceptT)
                     (accept espec1) (RunData sents trEvent)
             case accOrFailed of
-                Left err -> throwError err
-                Right Nothing -> throwError ("Evento rechazado ("++show trEvent++")")
-                Right (Just espec2) -> put espec2
+                Left err -> throwError (err, [])
+                Right (Left razones) -> throwError ("Evento rechazado ("
+                        ++show trEvent++")", razones)
+                Right (Right espec2) -> put espec2
 
 data RunData =
     RunData {
@@ -87,7 +93,7 @@ data RunData =
 type MonadRun = ExceptT String (Reader RunData)
 
 type MonadHandler =
-        ExceptT String
+        ExceptT (String, [Razon])
         (WriterT [Event]
         (StateT Proc
         (ReaderT Conf IO)))
@@ -101,15 +107,17 @@ data Conf =
         debug :: Bool
     }
 
-accept :: Proc -> MonadRun (Maybe Proc)
+type Razon = String
+
+accept :: Proc -> MonadRun (Either [Razon] Proc)
 accept (InternalChoice p q) = do
     nextp <- accept p
     nextq <- accept q
     case (nextp, nextq) of
-        (Just p', Just q') -> return (Just (InternalChoice p' q'))
-        (Just p', Nothing) -> return (Just p')
-        (Nothing, Just q') -> return (Just q')
-        (Nothing, Nothing) -> return Nothing
+        (Right p', Right q') -> return (Right (InternalChoice p' q'))
+        (Right p', Left _) -> return (Right p')
+        (Left _, Right q') -> return (Right q')
+        (Left r1, Left r2) -> return (Left (r1++r2))
 {-  InternalChoice con ocultacion de eventos tendria mas sentido porque el
     procedimiento automatico eligiría uno de los procesos. Por ahora External e
     Internal son iguales. El entorno decide en ambos casos. -}
@@ -117,45 +125,45 @@ accept (ExternalChoice p q) = do
     nextp <- accept p
     nextq <- accept q
     case (nextp, nextq) of
-        (Just p', Just q') -> return (Just (ExternalChoice p' q'))
-        (Just p', Nothing) -> return (Just p')
-        (Nothing, Just q') -> return (Just q')
-        (Nothing, Nothing) -> return Nothing
+        (Right p', Right q') -> return (Right (ExternalChoice p' q'))
+        (Right p', Left _) -> return (Right p')
+        (Left _, Right q') -> return (Right q')
+        (Left r1, Left r2) -> return (Left (r1++r2))
 accept alt@(LabeledAlt p q) = do
     nextp <- accept p
     nextq <- accept q
     case (nextp, nextq) of
-        (Just p', Nothing) -> return (Just p')
-        (Nothing, Just q') -> return (Just q')
-        (Nothing, Nothing) -> return Nothing
-        (Just _, Just _) -> do
+        (Right p', Left _) -> return (Right p')
+        (Left _, Right q') -> return (Right q')
+        (Left r1, Left r2) -> return (Left (r1++r2))
+        (Right _, Right _) -> do
             ev <- asks rEvent
             throwError ("El evento "++show ev++" fue aceptado mas de una vez"++
                 " en una alternativa: "++(show . prettyPrint) alt)
-accept (Sequential Stop _) = return Nothing
+accept (Sequential Stop _) = return (Left ["Se alcanzo STOP"])
 accept (Sequential p Skip) = accept p
 accept (Sequential Skip p) = accept p
 accept (Sequential p q) = do
     nextp <- accept p
     case nextp of
-        Just p' -> return (Just (Sequential p' q))
-        Nothing -> return Nothing
+        Right p' -> return (Right (Sequential p' q))
+        Left r -> return (Left r)
 accept int@(Interrupt p q) = do
     nextp <- accept p
     nextq <- accept q
     case (nextp, nextq) of
-        (Just p', Nothing) -> return (Just (Interrupt p' q))
-        (Nothing, Just q') -> return (Just q')
-        (Nothing, Nothing) -> return Nothing
-        (Just _, Just _) -> do
+        (Right p', Left _) -> return (Right (Interrupt p' q))
+        (Left _, Right q') -> return (Right q')
+        (Left r1, Left r2) -> return (Left (r1++r2))
+        (Right _, Right _) -> do
             ev <- asks rEvent
             throwError ("El evento "++show ev++" fue aceptado mas de una vez"++
                 " en una interrupcion: "++(show . prettyPrint) int)
 accept (ByName n) = do
     p <- getProc n
     accept p
-accept Stop = return Nothing
-accept Skip = return Nothing
+accept Stop = return (Left ["Se alcanzo STOP"])
+accept Skip = return (Left ["Se alcanzo SKIP"])
 accept (Prefix e1 p) = do
     e2 <- asks rEvent
     case matchEvents (TraceEvent e2) e1 of
@@ -179,10 +187,10 @@ accept (Prefix e1 p) = do
                         put (SubstLoop p2 (tail vars))
                     (IVal _) -> return ())) :: StateT (SubstLoop Val) MonadRun ()
             (SubstLoop p1 _) <- execStateT substLoop (SubstLoop p is)
-            return (Just p1)
-        (False, _) -> return Nothing
-accept (Parallel Stop _) = return Nothing
-accept (Parallel _ Stop) = return Nothing
+            return (Right p1)
+        (False, _) -> return (Left [{- sin razon en especifico -}])
+accept (Parallel Stop p) = accept p
+accept (Parallel p Stop) = accept p
 accept (Parallel Skip p) = accept p
 accept (Parallel p Skip) = accept p
 accept (Parallel p q) = do
@@ -190,24 +198,26 @@ accept (Parallel p q) = do
     nextp <- accept p
     nextq <- accept q
     case (nextp, nextq) of
-        (Nothing, Nothing) -> return Nothing
-        (Just p', Nothing) -> do
+        (Left r1, Left r2) -> return (Left (r1++r2))
+        (Right p', Left r) -> do
             inQ <- inAlpha ev q
             if inQ then do
-                return Nothing
+                return (Left (r ++ [("Falla de sincronizacion (bloqueado por "
+                        ++(show . prettyPrint) q++")")]))
             else case q of
-                Stop -> return (Just p')
-                Skip -> return (Just p')
-                _    -> return (Just (Parallel p' q))
-        (Nothing, Just q') -> do
+                Stop -> return (Right p')
+                Skip -> return (Right p')
+                _    -> return (Right (Parallel p' q))
+        (Left r, Right q') -> do
             inP <- inAlpha ev p
             if inP then do
-                return Nothing
+                return (Left (r ++ [("Falla de sincronizacion (bloqueado por "
+                        ++(show . prettyPrint) p++")")]))
             else case p of
-                Stop -> return (Just q')
-                Skip -> return (Just q')
-                _    -> return (Just (Parallel p q'))
-        (Just p', Just q') -> return (Just (Parallel p' q'))
+                Stop -> return (Right q')
+                Skip -> return (Right q')
+                _    -> return (Right (Parallel p q'))
+        (Right p', Right q') -> return (Right (Parallel p' q'))
 
 -- Utilidades
 
@@ -251,23 +261,41 @@ inAlpha' e = go
                 -}
         go (ByName           n) = do
             seen <- get
-            ev <- asks rEvent
+            let pars = params n
             if n `elem` seen then
                 return False
-            else if any isInductive (params n) then do
+            else if any isInductive pars then do
                 put (n:seen)
                 sents <- asks rSentences
                 let matches = filter (\s -> case s of
                         (Assign ref _) -> n == ref
                         (Limit  ref _) -> n == ref) sents
-                anyM go (map asProc matches)
+                let flat = map (\s -> case s of
+                        (Assign ref p) -> (ref, p)
+                        (Limit  ref p) -> (ref, p)) matches
+                -- para cada match:
+                --      para cada parametro no inductivo de n:
+                --          si el parametro respectivo en el match es inductivo:
+                --              sustituir en el proceso el parametro por el
+                --              valor en n
+                let procs1 = map (\(ref, p) -> execState
+                        ((forM_ (zip pars (params ref)) 
+                            (\(parOfN, parOfMatch) -> do
+                                p1 <- get
+                                case (parOfN, parOfMatch) of
+                                    (Base v, Inductive m c) ->
+                                        put (subst m (v-c) p1)
+                                    _ -> return ())) :: State Proc ())
+                                p)
+                        flat
+                anyM go procs1
                 -- buscar en los alfabetos alcanzables
             else do
                 put (n:seen)
                 p <- lift (getProc n)
                 go p
-        asProc (Assign _ p) = p
-        asProc (Limit  _ p) = p
+        -- asProc (Assign _ p) = p
+        -- asProc (Limit  _ p) = p
         isInductive (Inductive _ _) = True
         isInductive (Base _) = False
         {-asVariable (IVar v) = Just v
