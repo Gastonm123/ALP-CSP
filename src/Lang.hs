@@ -137,7 +137,7 @@ instance Show Val where
   show (Char c) = "\"" ++ [c] ++ "\""
 
 instance Show Parameter where
-  show (Inductive n c) = n ++ "+" ++ show c
+  show (Inductive n c) = if c == 0 then n else n ++ "+" ++ show c
   show (Base n) = show n
 
 instance Show ProcRef where
@@ -146,7 +146,7 @@ instance Show ProcRef where
 instance Show Index where
   show (IVal i) = show i
   show (IVar n) = n
-  show (IPlus i c) = i ++ "+" ++ show c
+  show (IPlus i c) = if c == 0 then i else i ++ "+" ++ show c
 
 instance Show Event where
   show (Event n i) = if not (null i) then n ++ "." ++ intercalate "." (map show i) else n
@@ -157,9 +157,6 @@ instance Show SParameter where
 
 instance Show SProcRef where
   show (SProcRef n p) = if not (null p) then n ++ "." ++ intercalate "." (map show p) else n
-
-instance Show Prog where
-  show _ = "working on it......."
 
 instance Show SIndex where
   show (SIOp m op c) = m ++ op ++ show c

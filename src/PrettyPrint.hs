@@ -16,60 +16,77 @@ import Prettyprinter
 import Prettyprinter.Render.Terminal
 import System.IO
 
-prettyPrint :: Proc -> Doc AnsiStyle
-prettyPrint = go
-  where
-    go (ByName p) = pretty (show p)
-    go Stop = pretty "STOP"
-    go Skip = pretty "SKIP"
-    go (Prefix ev q) =
-      case q of
-        (InternalChoice _ _) -> prefixBinary
-        (ExternalChoice _ _) -> prefixBinary
-        (LabeledAlt     _ _) -> prefixBinary
-        (Parallel       _ _) -> prefixBinary
-        (Sequential     _ _) -> prefixBinary
-        (Interrupt      _ _) -> prefixBinary
-        _                    -> (fillSep [pretty ev, pretty "->", go q])
-      where
-        prefixBinary = fillSep [pretty ev, pretty "->", paren (go q)]
-      {- Si el proceso q se construye con operadores de menor precedencia
-        - entonces parece que la prefijacion se roba la primera parte del 
-        - termino. Por ej:
-        -    Pref "a" (Parallel (ByName "AB") (ByName "XY"))
-        - se renderizaría, sin parentesis
-        -    a -> AB || XY
-        -}
-    go (ExternalChoice p q) = binary  "[]" p q
-    go (InternalChoice p q) = binary "|~|" p q
-    go (Interrupt      p q) = binary "/\\" p q
-    go (LabeledAlt     p q) = binary   "|" p q
-    go (Parallel       p q) = binary  "||" p q
-    go (Sequential     p q) = binary   ";" p q
-    binary op p q = let
-      precEnv = precedence op
-      envBinary op1 pr =
-        if precEnv > precedence op1 then
-          paren (go pr)
-        else
-          go pr
-      prettyP = case p of
-        (ExternalChoice _ _) -> envBinary  "[]" p
-        (InternalChoice _ _) -> envBinary "|~|" p
-        (Interrupt      _ _) -> envBinary "/\\" p
-        (LabeledAlt     _ _) -> envBinary   "|" p
-        (Parallel       _ _) -> envBinary  "||" p
-        (Sequential     _ _) -> envBinary   ";" p
-        _                    -> go p
-      prettyQ = case q of
-        (ExternalChoice _ _) -> envBinary  "[]" q
-        (InternalChoice _ _) -> envBinary "|~|" q
-        (Interrupt      _ _) -> envBinary "/\\" q
-        (LabeledAlt     _ _) -> envBinary   "|" q
-        (Parallel       _ _) -> envBinary  "||" q
-        (Sequential     _ _) -> envBinary   ";" q
-        _                    -> go q
-      in fillSep [prettyP, pretty op, prettyQ]
+class PrettyPrint a where
+  prettyPrint :: a -> Doc AnsiStyle
+
+instance PrettyPrint Proc where
+  prettyPrint = go
+    where
+      go (ByName p) = pretty (show p)
+      go Stop = pretty "STOP"
+      go Skip = pretty "SKIP"
+      go (Prefix ev q) =
+        case q of
+          (InternalChoice _ _) -> prefixBinary
+          (ExternalChoice _ _) -> prefixBinary
+          (LabeledAlt     _ _) -> prefixBinary
+          (Parallel       _ _) -> prefixBinary
+          (Sequential     _ _) -> prefixBinary
+          (Interrupt      _ _) -> prefixBinary
+          _                    -> (fillSep [pretty ev, pretty "->", go q])
+        where
+          prefixBinary = fillSep [pretty ev, pretty "->", paren (go q)]
+        {- Si el proceso q se construye con operadores de menor precedencia
+          - entonces parece que la prefijacion se roba la primera parte del 
+          - termino. Por ej:
+          -    Pref "a" (Parallel (ByName "AB") (ByName "XY"))
+          - se renderizaría, sin parentesis
+          -    a -> AB || XY
+          -}
+      go (ExternalChoice p q) = binary  "[]" p q
+      go (InternalChoice p q) = binary "|~|" p q
+      go (Interrupt      p q) = binary "/\\" p q
+      go (LabeledAlt     p q) = binary   "|" p q
+      go (Parallel       p q) = binary  "||" p q
+      go (Sequential     p q) = binary   ";" p q
+      binary op p q = let
+        precEnv = precedence op
+        envBinary op1 pr =
+          if precEnv > precedence op1 then
+            paren (go pr)
+          else
+            go pr
+        prettyP = case p of
+          (ExternalChoice _ _) -> envBinary  "[]" p
+          (InternalChoice _ _) -> envBinary "|~|" p
+          (Interrupt      _ _) -> envBinary "/\\" p
+          (LabeledAlt     _ _) -> envBinary   "|" p
+          (Parallel       _ _) -> envBinary  "||" p
+          (Sequential     _ _) -> envBinary   ";" p
+          _                    -> go p
+        prettyQ = case q of
+          (ExternalChoice _ _) -> envBinary  "[]" q
+          (InternalChoice _ _) -> envBinary "|~|" q
+          (Interrupt      _ _) -> envBinary "/\\" q
+          (LabeledAlt     _ _) -> envBinary   "|" q
+          (Parallel       _ _) -> envBinary  "||" q
+          (Sequential     _ _) -> envBinary   ";" q
+          _                    -> go q
+        in fillSep [prettyP, pretty op, prettyQ]
+
+instance PrettyPrint Sentence where
+  prettyPrint = go
+    where
+      go (Assign pRef p) = (pretty . show) pRef <+> pretty '=' <+> prettyPrint p
+      go (Limit pRef p) = pretty "STOP" <+> (pretty . show) pRef
+          <+> pretty '=' <+> prettyPrint p
+
+instance PrettyPrint Prog where
+  prettyPrint (Prog sents trace) =
+    vsep (map prettyPrint sents) <> hardline <>
+    pretty "=== O ===" <> hardline <>
+    vsep (map (pretty . show) trace)
+
 
 {- Precedencia:
 ->              precede a  (4)

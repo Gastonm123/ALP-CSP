@@ -6,6 +6,8 @@ import           ParserMonad
 import           System.Console.GetOpt
 import qualified System.Environment            as Env
 import           Parser
+import           Lang
+import           PrettyPrint
 import           Elab
 
 import           Prettyprinter -- Doc
@@ -35,12 +37,9 @@ runOptions fp opts
           else
             defaultConfiguration
         in if
-          | optAST opts       -> print eprog
-          | optPrint opts     -> {-do
-              let hangPrint :: Sentence -> Doc AnsiStyle
-                  hangPrint p = hang 4 (prettyPrint (SentG p))
-              print (vcat (map hangPrint prog)) -}
-              return ()
+          | optAST opts -> 
+            render (vsep (map (pretty . show) (sentences eprog)))
+          | optPrint opts -> (render . prettyPrint) eprog
           | otherwise -> runReaderT (run eprog) config
 
 

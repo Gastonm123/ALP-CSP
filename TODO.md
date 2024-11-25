@@ -1,1 +1,0 @@
-- Agregar chars como indices

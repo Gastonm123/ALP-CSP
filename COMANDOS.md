@@ -1,6 +1,6 @@
 ## Stack o Cabal
-No se. Se puede usar Cabal o Stack de manera intercambiable aunque Stack es el
-mas confiable y mas configurable por medio del `stack.yaml`
+Se puede usar Cabal o Stack de manera intercambiable aunque Stack es mas
+confiable y mas configurable por medio del `stack.yaml`
 
 Para stack:
 ```
@@ -14,9 +14,8 @@ cabal build
 cabal run CSP-stack-exe -- examples/Especificacion.csp
 ```
 
-Stack por defecto no soporta los campos setup-tools para instalar happy de forma
-automatica cada vez que compila si este no esta disponible. Por eso vamos a
-tener que instalarlo manualmente. Suerte!
+Stack, por defecto, no soporta el campo setup-tools para instalar happy de forma
+automatica. Vamos a tener que instalarlo manualmente. Suerte!
 
 ## Otros
 ### Para aplicar cambios de package.yaml
@@ -30,11 +29,13 @@ antes de compilar de nuevo3
 Agregar o quitar la opcion `-d` para ver informacion de debug.
 ```
 cabal run CSP-stack-exe -- archivo.csp
+stack run -- archivo.csp
 ```
 
 Para ver la sintaxis interpretada por el parser agregar la bandera -a
 ```
 cabal run CSP-stack-exe -- examples/Especificacion.csp -a
+stack run -- examples/Especificacion.csp -a
 ```
 
 ### Para testear el parser
