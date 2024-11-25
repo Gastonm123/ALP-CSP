@@ -137,7 +137,7 @@ instance Show Val where
   show (Char c) = "\"" ++ [c] ++ "\""
 
 instance Show Parameter where
-  show (Inductive n c) = n ++ show c
+  show (Inductive n c) = n ++ "+" ++ show c
   show (Base n) = show n
 
 instance Show ProcRef where

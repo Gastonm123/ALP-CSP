@@ -6,3 +6,4 @@ dist-newstyle
 # porque uso el codespace para todo lo que tenga
 # que ver con haskell
 compilador-main
+log

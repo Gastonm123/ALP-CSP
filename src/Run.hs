@@ -6,6 +6,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE InstanceSigs #-}
+{-# OPTIONS_GHC -Wno-overlapping-patterns #-}
 module Run (run, accept, Conf(..)) where
 {- Exporta run para ejecucion desde CLI y accept para modo interactivo -}
 
@@ -24,33 +25,42 @@ import PrettyPrint
 
 run :: Prog -> ReaderT Conf IO ()
 run (Prog [] _) = do
-    liftIO (putStrLn "! Error: El parser generó un programa vacío")
+    liftIO (putStrLn "! Error: El parser generó una especificacion vacía")
 run (Prog sents []) = do
-    let (Assign _ espec) = head (reverse sents)
-    liftIO (putStrLn "> Especificacion cargada sin trazas para ejecutar.")
-    liftIO (putStrLn "> Especificacion:")
-    liftIO (render (prettyPrint espec))
+    case head (reverse sents) of
+        (Assign _ espec) -> do
+            liftIO (putStrLn "> Especificacion cargada sin trazas para ejecutar.")
+            liftIO (putStrLn "> Especificacion:")
+            liftIO (render (prettyPrint espec))
+        (Limit _ _) -> do
+            liftIO (putStrLn ("! Error: la ultima sentencia del archivo debe ser"
+                ++" una asignacion"))
 run (Prog sents tr) = do
-    let (Assign _ espec) = head (reverse sents)
-    {- La ultima declaracion del archivo es la especificacion -}
-    ((result, acceptedEvs), espec1) <- (runStateT . runWriterT . runExceptT)
-            (mapM_ handleEvent tr) espec
-    {- Diversion con monadas :D -}
-    case result of
-        (Left  err) -> do
-                liftIO (putStrLn ("! Error: "++err))
-                liftIO (putStrLn ("! Eventos procesados: "
-                    ++ ((intercalate ", " . map show) acceptedEvs)))
-        (Right _)   -> do
-                isDebug <- asks debug
-                when (isDebug) (do
-                    liftIO (putStrLn "? Estado final de la especificacion:")
-                    liftIO (render (prettyPrint espec1)))
-                liftIO (putStrLn  "> OK!")
-                liftIO (putStrLn ("> La especificacion acepto todos los eventos"
-                    ++ " de la traza"))
+    case head (reverse sents) of
+        (Assign _ espec) -> do
+            {- La ultima declaracion del archivo es la especificacion -}
+            ((result, acceptedEvs), espec1) <-
+                (runStateT . runWriterT . runExceptT)
+                    (mapM_ handleEvent tr) espec
+            {- Diversion con monadas :D -}
+            case result of
+                (Left  err) -> do
+                        liftIO (putStrLn ("! Error: "++err))
+                        liftIO (putStrLn ("! Eventos procesados: "
+                            ++ ((intercalate ", " . map show) acceptedEvs)))
+                (Right _)   -> do
+                        isDebug <- asks debug
+                        when (isDebug) (do
+                            liftIO (putStrLn "? Estado final de la especificacion:")
+                            liftIO (render (prettyPrint espec1)))
+                        liftIO (putStrLn  "> OK!")
+                        liftIO (putStrLn ("> La especificacion acepto todos los"
+                            ++ " eventos de la traza"))
+        (Limit _ _) -> do
+            liftIO (putStrLn ("! Error: la ultima sentencia del archivo debe ser"
+                ++" una asignacion"))
     where
-        handleEvent :: Event -> MonadHandler
+        handleEvent :: Event -> MonadHandler ()
         handleEvent trEvent = do
             espec1 <- get
             tell [trEvent]
@@ -79,7 +89,7 @@ type MonadHandler =
         ExceptT String
         (WriterT [Event]
         (StateT Proc
-        (ReaderT Conf IO))) ()
+        (ReaderT Conf IO)))
 
 newtype TraceEvent = TraceEvent { deTraceEvent :: Event }
 
@@ -121,7 +131,7 @@ accept alt@(LabeledAlt p q) = do
             ev <- asks rEvent
             throwError ("El evento "++show ev++" fue aceptado mas de una vez"++
                 " en una alternativa: "++(show . prettyPrint) alt)
-accept (Sequential Stop p) = return Nothing
+accept (Sequential Stop _) = return Nothing
 accept (Sequential p Skip) = accept p
 accept (Sequential Skip p) = accept p
 accept (Sequential p q) = do
@@ -170,8 +180,8 @@ accept (Prefix e1 p) = do
             (SubstLoop p1 _) <- execStateT substLoop (SubstLoop p is)
             return (Just p1)
         (False, _) -> return Nothing
-accept (Parallel Stop q) = return Nothing
-accept (Parallel q Stop) = return Nothing
+accept (Parallel Stop _) = return Nothing
+accept (Parallel _ Stop) = return Nothing
 accept (Parallel Skip p) = accept p
 accept (Parallel p Skip) = accept p
 accept (Parallel p q) = do
@@ -253,9 +263,9 @@ inAlpha' e = go
                     go p
         isInductiveOrMarked (Inductive _ _) = True
         isInductiveOrMarked (Base n) = (n == -1)
-        asVariable (IVar v) = Just v
+        {-asVariable (IVar v) = Just v
         asVariable (IPlus v _) = Just v 
-        asVariable (IVal _) = Nothing
+        asVariable (IVal _) = Nothing-}
 
 -- La referencia que se busca DEBE tener todos los parametros con valor.
 -- Si todas las sentencias son cerradas entonces podemos asegurarlo.
@@ -263,39 +273,61 @@ getProc :: ProcRef -> MonadRun Proc
 getProc pRef = do
     -- traceM (show pRef)
     sents <- asks rSentences
-    case findProc sents of
-        [s] -> do
-            -- traceM (show s)
-            let (Assign pRef1 p, pars) = s
-            let parsOfMatch = params pRef1
-            let substLoop = (forM_ parsOfMatch (\i -> case i of
-                    (Inductive n _) -> do
-                        p1 <- gets substProc
-                        vars <- gets substVars
-                        let p2 = subst n (head vars) p1
-                        put (SubstLoop p2 (tail vars))
-                        {- no es posible fallar en esta parte por head o tail
-                           porque los reemplazos para las variables se
-                           obtuvieron uno por uno desde los parametros -}
-                    (Base _) -> return ())) :: State (SubstLoop Int) ()
-            let (SubstLoop p1 _) = execState substLoop (SubstLoop p pars)
-            return p1
-        (_:_) -> throwError ("El proceso "++show pRef++" es ambiguo.")
-        []    -> throwError ("El proceso "++show pRef++" no esta definido.")
+    let matchs = findProc sents
+    let limits = filter (\(s, _) -> isLimit s) matchs
+    if not (null limits) then
+        case limits of
+            [(Limit pRef1 p, pars)] -> do
+                -- traceM (show s)
+                let parsOfMatch = params pRef1
+                let substLoop = (forM_ parsOfMatch (\i -> case i of
+                        (Inductive n _) -> do
+                            p1 <- gets substProc
+                            vars <- gets substVars
+                            let p2 = subst n (head vars) p1
+                            put (SubstLoop p2 (tail vars))
+                            {- no es posible fallar en esta parte por head o tail
+                            porque los reemplazos para las variables se
+                            obtuvieron uno por uno desde los parametros -}
+                        (Base _) -> return ())) :: State (SubstLoop Int) ()
+                let (SubstLoop p1 _) = execState substLoop (SubstLoop p pars)
+                return p1
+            (_:_) -> throwError ("El limite del proceso "++show pRef++" es ambiguos.")
+            []    -> throwError ("El limite del proceso "++show pRef++" no esta definido.")
+    else
+        case matchs of
+            [(Assign pRef1 p, pars)] -> do
+                -- traceM (show s)
+                let parsOfMatch = params pRef1
+                let substLoop = (forM_ parsOfMatch (\i -> case i of
+                        (Inductive n _) -> do
+                            p1 <- gets substProc
+                            vars <- gets substVars
+                            let p2 = subst n (head vars) p1
+                            put (SubstLoop p2 (tail vars))
+                            {- no es posible fallar en esta parte por head o tail
+                            porque los reemplazos para las variables se
+                            obtuvieron uno por uno desde los parametros -}
+                        (Base _) -> return ())) :: State (SubstLoop Int) ()
+                let (SubstLoop p1 _) = execState substLoop (SubstLoop p pars)
+                return p1
+            (bar:foo) -> 
+                throwError ("El proceso "++show pRef++" es ambiguo."
+                    ++show bar++" "++show foo)
+            []    -> throwError ("El proceso "++show pRef++" no esta definido.")
     where
-        findProc (sent:ss) = case matchRefInSent pRef sent of
-            (True, pars) -> (sent, pars) : findProc ss
-            (False, _) -> findProc ss
-        findProc [] = []
-        matchRefInSent p (Assign q _) =
+        findProc = mapMaybe (\s -> case s of
+            (Assign q _) -> matchRefs q pRef >>= (\pars -> return (s, pars))
+            (Limit  q _) -> matchRefs q pRef >>= (\pars -> return (s, pars)))
+        matchRefs p q =
             if (procName p == procName q) &&
                (length (params p) == length (params q)) then
                 if null (params p) then
-                    (True, [])
+                    Just []
                 else
-                    runWriter (matchParams (params p) (params q))
+                    Just (execWriter (matchParams (params p) (params q)))
             else
-                (False, [])
+                Nothing
         matchParams :: [Parameter] -> [Parameter] -> Writer [Int] Bool
         matchParams [Base v1] [Base v2] =
             if (v1 == v2) then
@@ -320,6 +352,8 @@ getProc pRef = do
             else
                 return False
         matchParams _ _ = return False
+        isLimit (Limit  _ _) = True
+        isLimit (Assign _ _) = False
 
 -- SIEMPRE se matchea una traza contra un evento de especificacion.
 -- Los eventos de las trazas tienen todos los indices valuados.

@@ -2,9 +2,8 @@
 module Lexer (lexer, Token(..)) where
 
 import Lang ()
-import ParserMonad ( P, failPos, ParseResult, failPos' )
+import ParserMonad ( P, failPos' )
 import Data.Char ( isNumber, isAlpha, isSpace, isLower, isUpper )
-import Debug.Trace (trace)
 
 lexer :: (Token -> P a) -> P a
 lexer cont s = {-trace (take 10 s) $-} case s of

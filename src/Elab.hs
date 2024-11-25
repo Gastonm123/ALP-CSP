@@ -2,7 +2,7 @@
 {-# HLINT ignore "Redundant bracket" #-}
 {-# HLINT ignore "Use lambda-case" #-}
 {-# OPTIONS_GHC -Wno-incomplete-patterns #-}
-module Elab where
+module Elab (elabProg) where
 
 import Lang
 import Control.Monad.State
