@@ -19,8 +19,9 @@ import Data.Maybe
 import Data.List
 import Data.Functor
 import Control.Monad
-import Debug.Trace (trace, traceM)
+import Debug.Trace (trace, traceM, traceShow, traceShowM)
 import PrettyPrint
+import GHC.Utils.Monad
 
 
 run :: Prog -> ReaderT Conf IO ()
@@ -249,20 +250,26 @@ inAlpha' e = go
                 - donde el parametro i esta ligado al evento ab.i
                 -}
         go (ByName           n) = do
-            if any isInductiveOrMarked (params n) then
+            seen <- get
+            ev <- asks rEvent
+            if n `elem` seen then
                 return False
-                -- no tiene sentido buscar su alfabeto porque no esta
-                -- completamente valuado
+            else if any isInductive (params n) then do
+                put (n:seen)
+                sents <- asks rSentences
+                let matches = filter (\s -> case s of
+                        (Assign ref _) -> n == ref
+                        (Limit  ref _) -> n == ref) sents
+                anyM go (map asProc matches)
+                -- buscar en los alfabetos alcanzables
             else do
-                seen <- get
-                if n `elem` seen then
-                    return False
-                else do
-                    put (n:seen)
-                    p <- lift (getProc n)
-                    go p
-        isInductiveOrMarked (Inductive _ _) = True
-        isInductiveOrMarked (Base n) = (n == -1)
+                put (n:seen)
+                p <- lift (getProc n)
+                go p
+        asProc (Assign _ p) = p
+        asProc (Limit  _ p) = p
+        isInductive (Inductive _ _) = True
+        isInductive (Base _) = False
         {-asVariable (IVar v) = Just v
         asVariable (IPlus v _) = Just v 
         asVariable (IVal _) = Nothing-}
@@ -311,21 +318,20 @@ getProc pRef = do
                         (Base _) -> return ())) :: State (SubstLoop Int) ()
                 let (SubstLoop p1 _) = execState substLoop (SubstLoop p pars)
                 return p1
-            (bar:foo) -> 
-                throwError ("El proceso "++show pRef++" es ambiguo."
-                    ++show bar++" "++show foo)
+            (_:_) -> throwError ("El proceso "++show pRef++" es ambiguo.")
             []    -> throwError ("El proceso "++show pRef++" no esta definido.")
     where
         findProc = mapMaybe (\s -> case s of
-            (Assign q _) -> matchRefs q pRef >>= (\pars -> return (s, pars))
-            (Limit  q _) -> matchRefs q pRef >>= (\pars -> return (s, pars)))
+            (Assign q _) -> matchRefs pRef q >>= (\pars -> return (s, pars))
+            (Limit  q _) -> matchRefs pRef q >>= (\pars -> return (s, pars)))
         matchRefs p q =
             if (procName p == procName q) &&
                (length (params p) == length (params q)) then
                 if null (params p) then
                     Just []
-                else
-                    Just (execWriter (matchParams (params p) (params q)))
+                else case runWriter (matchParams (params p) (params q)) of
+                    (True, pars) -> Just pars
+                    (False,   _) -> Nothing
             else
                 Nothing
         matchParams :: [Parameter] -> [Parameter] -> Writer [Int] Bool

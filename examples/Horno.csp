@@ -57,6 +57,30 @@ TEMPORIZADOR_PARADO.0
     | get_time!0 -> TEMPORIZADOR_PARADO.0
     | start -> TEMPORIZADOR_PARADO.0     -- ignore
     | tick -> TEMPORIZADOR_PARADO.0      -- ignore
+TEMPORIZADOR_PARADO.1
+    = aumentar_tiempo.5 -> TEMPORIZADOR_PARADO.6
+    | disminuir_tiempo.5 -> TEMPORIZADOR_PARADO.0
+    | get_time!1 -> TEMPORIZADOR_PARADO.1
+    | start -> TEMPORIZADOR.1
+    | tick -> TEMPORIZADOR_PARADO.1      -- ignore
+TEMPORIZADOR_PARADO.2
+    = aumentar_tiempo.5 -> TEMPORIZADOR_PARADO.7
+    | disminuir_tiempo.5 -> TEMPORIZADOR_PARADO.0
+    | get_time!2 -> TEMPORIZADOR_PARADO.2
+    | start -> TEMPORIZADOR.2
+    | tick -> TEMPORIZADOR_PARADO.2      -- ignore
+TEMPORIZADOR_PARADO.3
+    = aumentar_tiempo.5 -> TEMPORIZADOR_PARADO.8
+    | disminuir_tiempo.5 -> TEMPORIZADOR_PARADO.0
+    | get_time!3 -> TEMPORIZADOR_PARADO.3
+    | start -> TEMPORIZADOR.3
+    | tick -> TEMPORIZADOR_PARADO.3      -- ignore
+TEMPORIZADOR_PARADO.4
+    = aumentar_tiempo.5 -> TEMPORIZADOR_PARADO.9
+    | disminuir_tiempo.5 -> TEMPORIZADOR_PARADO.0
+    | get_time!4 -> TEMPORIZADOR_PARADO.4
+    | start -> TEMPORIZADOR.4
+    | tick -> TEMPORIZADOR_PARADO.4      -- ignore
 TEMPORIZADOR_PARADO.t
     = aumentar_tiempo.5 -> TEMPORIZADOR_PARADO.(t+5)
     | disminuir_tiempo.5 -> TEMPORIZADOR_PARADO.(t-5)
@@ -146,6 +170,7 @@ boton_potencia.1
 potencia.1
 press_start
 get_time.5
+tick           -- just random tick
 start
 
 temporizador.5
@@ -169,13 +194,14 @@ final_temporizador
 hora_actual
 
 press_start
+get_time.0
 beep
 giro_horario
 aumentar_tiempo.5
 press_start        -- ignored
 boton_potencia.4
 potencia.4
-press_start
+press_start        -- llega hasta aca
 get_time.5
 start
 
