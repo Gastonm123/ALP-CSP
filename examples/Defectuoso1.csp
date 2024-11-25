@@ -1,9 +1,11 @@
 A = l -> c -> d -> B -- no existe B
-C = l -> c -> B -- falla antes
+C = l -> c -> D -- falla antes
+D = d -> D
 SPEC = A || C
 
 ===== O =======
 
 l
 c
+d
 d

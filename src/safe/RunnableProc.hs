@@ -7,6 +7,7 @@ import AST ( Event, ProcId )
 data ProcRep a
   = ExternalChoiceRep a a
   | InternalChoiceRep a a
+  | LabeledAltRep a a
   | PrefixRep Event a
   | ParallelRep a a
   | InterruptRep a a
@@ -24,4 +25,8 @@ class RunnableProc a where
   asProc :: a -> ProcRep a
   fromProc :: ProcRep a -> a
   findProc :: a -> ProcId -> a
+  showProc :: a -> String
+  
+  -- in case deterministic check is required
+  accept' :: a -> Event -> Bool
 

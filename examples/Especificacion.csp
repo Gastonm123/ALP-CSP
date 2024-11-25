@@ -1,0 +1,170 @@
+{-
+Un barco de guerra cuenta con un radar principal (RP), dos cañones identicos (C1
+y C2) cada uno con su radar (RS1 y RS2) y una sala de comando desde donde se
+indica si un objetivo apuntado por alguno de los dos cañones debe ser abandonado o
+destruido.
+El RP esta permanentemente escrutando el area de disparo en busca de objetivos.
+Cada vez que RP encuentra uno se lo debe asignar a uno de los dos cañones si alguno
+esta libre (sin objetivo en su mira); al asignarlo se le indica la posicion y la trayectoria
+del objetivo.
+La posicion inicial del cañon al asignarsele un nuevo objetivo es conocida por el software. 
+En funcion de la posicion inicial y de los datos transmitidos por el RP, el software apunta
+el cañon y el RS al objetivo.
+Normalmente, un RS esta inactivo hasta que le es asignado un objetivo. Desde ese
+momento el RS comienza a seguir su objetivo hasta que:
+a) Recibe la orden de disparar;
+b) Recibe la orden de abandonar el objetivo;
+c) El objetivo se va fuera de alcance.
+En cualquiera de los tres casos, el RS luego pasa a estar inactivo.
+El seguimiento del objetivo por parte de un RS implica mover el cañon lo cual esta a
+cargo de un motor. El software tiene a su cargo emitir las ordenes de movimiento del
+motor las cuales tienen la forma: Arriba(ang), Abajo(ang), GiroA(ang) y GiroH (ang),
+donde ang es un angulo.
+-}
+
+-- Uso: timer de t*100 milisegundos
+TIMER.t    = TIMER.t.1 /\ stop -> TIMER.t
+TIMER.t.1  = start -> (WAIT.t; TIMER.t.1)
+           | tick -> TIMER.t.1
+--
+WAIT.0     = timeout -> SKIP
+WAIT.(t+1) = tick -> WAIT.t
+
+--
+RP   = RP.1 /\ timeout -> RP
+RP.1 = deteccion?b -> start ->
+    ( disponible.1 -> stop -> tracking.b -> objetivo.1!b -> RP.1
+    | disponible.2 -> stop -> tracking.b -> objetivo.2!b -> RP.1)
+-- RP no hace deadlock porque solo hay una copia
+
+--
+RS.i = disponible.i -> objetivo.i?b -> 
+    (SEGUIR.i.b /\ (RS.i.b; inactivo.i -> RS.i))
+RS.i.b = torre_fuera.i.b -> SKIP
+    | torre_abandonar.i.b -> SKIP
+    | torre_disparar.i.b -> SKIP
+SEGUIR.i.b = arriba.i.b -> SEGUIR.i.b
+    | abajo.i.b -> SEGUIR.i.b
+    | giroa.i.b -> SEGUIR.i.b
+    | giroh.i.b -> SEGUIR.i.b
+RADARES_SECUNDARIOS = RS.1 || RS.2
+
+-- Usamos N+1 barcos para especificar, donde N es el numero de torres
+BARCO.i = BARCO.i.1; BARCO.i
+BARCO.i.1 = 
+    ( tracking.i -> BARCO.i.2
+    | objarriba.i -> BARCO.i.1
+    | objabajo.i -> BARCO.i.1
+    | objgiroa.i -> BARCO.i.1
+    | objgiroh.i -> BARCO.i.1
+    | fuera.i -> BARCO.i.1
+    | dentro.i -> BARCO.i.1)
+BARCO.i.2 = 
+    ( objarriba.i -> arriba.t.i -> BARCO.i.2
+    | objabajo.i  -> abajo.t.i -> BARCO.i.2
+    | objgiroa.i  -> giroa.t.i -> BARCO.i.2
+    | objgiroh.i  -> giroh.t.i -> BARCO.i.2
+    | fuera.i     -> torre_fuera.t.i -> SKIP
+    | abandonar.i -> torre_abandonar.t.i -> SKIP
+    | disparar.i  -> torre_disparar.t.i -> SKIP)
+BARCOS = BARCO.1 || BARCO.2 || BARCO.3
+
+--
+RANGO.j = dentro.j -> RANGO.j.1; RANGO.j
+RANGO.j.1 = tracking.j -> RANGO.j.2
+          | deteccion!j -> RANGO.j.1
+          | fuera.j -> SKIP
+RANGO.j.2 = abandonar.j -> RANGO.j.1
+          | disparar.j -> RANGO.j.1
+          | deteccion!j -> RANGO.j.2
+          | fuera.j -> SKIP
+EN_RANGO = RANGO.1 || RANGO.2 || RANGO.3
+
+--
+CANION.i = torre_disparar.i.j -> descargar.i -> recargar.i -> CANION.i
+CANIONES = CANION.1 || CANION.2
+
+--
+DK_BARCO.j =
+    objgiroa.j -> DK_BARCO.j | objgiroh.j -> DK_BARCO.j |
+    objarriba.j -> DK_BARCO.j | objabajo.j -> DK_BARCO.j |
+    dentro.j -> DK_BARCO.j | fuera.j -> DK_BARCO.j
+
+DK_BARCOS  = DK_BARCO.1 || DK_BARCO.2 || DK_BARCO.3
+
+SPEC = TIMER.1 || RP || DK_BARCOS ||
+    CANIONES || RADARES_SECUNDARIOS || BARCOS || EN_RANGO
+
+=========================== O =============================
+
+dentro.1
+deteccion.1
+start
+disponible.1
+stop
+tracking.1
+objetivo.1.1
+disparar.1
+torre_disparar.1.1
+descargar.1
+recargar.1
+inactivo.1
+fuera.1
+
+-- aparecen los barcos 1,3,2. solo 1 y 3 son seguidos
+dentro.1
+dentro.3
+dentro.2
+deteccion.1
+start
+disponible.2
+stop
+tracking.1
+objetivo.2.1 -- el radar 2 sigue a 1
+deteccion.3
+start
+disponible.1
+stop
+tracking.3
+objetivo.1.3
+deteccion.2
+start
+tick
+timeout
+deteccion.2
+start
+tick
+timeout
+objarriba.2 -- ignorado
+objabajo.2
+objgiroa.2
+objgiroh.2
+fuera.2     -- perdido
+
+dentro.2
+objabajo.1
+abajo.2.1
+abandonar.1
+torre_abandonar.2.1
+inactivo.2
+deteccion.2
+start
+disponible.2
+stop
+tracking.2
+objetivo.2.2
+objabajo.2
+abajo.2.2
+disparar.2
+torre_disparar.2.2
+objgiroa.3
+giroa.1.3
+objgiroh.3
+giroh.1.3
+fuera.3
+torre_fuera.1.3
+inactivo.1
+
+descargar.2
+recargar.2
+fuera.2     -- hundido por el disparo

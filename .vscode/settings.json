@@ -1,0 +1,26 @@
+{
+    "files.exclude": {
+        "**/.git": true,
+        "**/.svn": true,
+        "**/.hg": true,
+        "**/CVS": true,
+        "**/.DS_Store": true,
+        "**/Thumbs.db": true,
+        "**/*.crswap": true,
+        "**/.stack-work": true,
+        "**/dist-newstyle": true,
+        "**/stack.yaml": false,
+        "**/package.yaml": false,
+        "**/CSP-stack.cabal": false,
+        "**/stack.yaml.lock": true,
+        "**/Setup.hs": true,
+        "**/hie.yaml": false,
+        "**/compilador-main": true
+    },
+    "editor.rulers": [
+        80
+    ],
+    "haskell.plugin.semanticTokens.globalOn": true,
+    "haskell.serverExtraArgs": "--logfile /workspaces/ALP-CSP/log --debug",
+    "haskell.trace.server": "off",
+}

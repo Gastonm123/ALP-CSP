@@ -1,2 +1,20 @@
-SESION = login -> crear_cookie -> dashboard -> logoff -> borrar_cookie -> SESION
-COOKIE = crear_cookie -> borrar_cookie -> COOKIE
+SESION.i = login.i -> crear_cookie.i -> dashboard.i -> logoff.i -> borrar_cookie.i -> SESION.i
+COOKIE.i = crear_cookie.i -> borrar_cookie.i -> COOKIE.i
+
+SPEC = SESION.1 || COOKIE.1 || SESION.2 || COOKIE.2
+
+========= O =======
+
+login.1
+login.2
+crear_cookie.2
+dashboard.2
+crear_cookie.1
+dashboard.1
+logoff.2
+logoff.1
+borrar_cookie.2
+borrar_cookie.1
+login.1
+crear_cookie.1
+dashboard.1

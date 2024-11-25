@@ -22,7 +22,9 @@ runGenWithEvents defines erandom p evs = case p of
     let evalRes = evalProcStar defines erandom q
     q1 <- runStar evalRes evs
     return (ProcG q1)
-  (SentG (Compare q r)) -> do
+  (SentG (NEq q r)) -> undefined
+  (SentG (NEqStar q r)) -> undefined
+  (SentG (Eq q r)) -> do
     let evalQ = evalProcStar defines erandom q
     let evalR = evalProcStar defines erandom r
     traceQ <- trace evalQ evs 
@@ -33,11 +35,11 @@ runGenWithEvents defines erandom p evs = case p of
         traceShowM traceQ
         traceShowM traceR
         traceShowM p-}
-        return (Error (show (prettyPrint (SentG (Compare q r)))))
+        return (Error (show (prettyPrint (SentG (Eq q r)))))
       else do
         p1 <- runStar evalQ evs
         q1 <- runStar evalR evs
-        return (SentG (Compare p1 q1))
+        return (SentG (Eq p1 q1))
   (ProcG q) -> do
     let evalRes = evalProcStar defines erandom q
     q1 <- runStar evalRes evs

@@ -1,0 +1,30 @@
+MEMO.i = put.i?v -> (READ.i [] MEMO.i)   -- un valor puede sobreescribirse
+READ.i = get.i!v -> MEMO.i
+S = MEMO.1 || MEMO.2 || MEMO.3 || MEMO.4 || MEMO.5 || 
+    MEMO.6 || MEMO.7 || MEMO.8 || MEMO.9 || MEMO.10 -- || MEMO.11 -- descomentar para que la traza pase
+
+=============== O ==============
+
+put.1!"h"
+put.2!"e"
+put.3!"l"
+put.4!"l"
+put.5!"o"
+put.6!" "
+put.7!"w"
+put.8!"o"
+put.9!"r"
+put.10!"l"
+put.11!"d"  -- la especificacion no permite este evento
+put.10!"\0"
+
+get.1."h"
+get.2."e"
+get.3."l"
+get.4."o"
+get.5." "
+get.6."w"
+get.7."o"
+get.8."r"
+get.9."l"
+get.10."\0"

@@ -7,20 +7,15 @@
 -- Stability   :  -
 --
 -- This library deals with parsing a CSP file or CSP single line.
-module Parser (
-  file_parse,
-  line_parse,
-  ParseResult (..),
-  P(..)
-) where
-import ParserDefinitions
-import ParserChannel
-import AST
-import Data.Char
+module Parser (parseFile, parseInteractive) where
+import ParserMonad
+import Lang
+import Lexer
 }
 
-%name parseDecls Sentences
-%name parseDecl Sentence
+-- parseFile :: String -> LineNumber -> ParseResult a
+%name parseFile Program
+%name parseInteractive Sentence
 
 %tokentype { Token }
 %error { parseError }
@@ -31,6 +26,7 @@ import Data.Char
 %token
   STOP       { TokenStop }
   SKIP       { TokenSkip }
+  '-O-'      { TokenSeparator }
   '->'       { TokenArrow }
   '[]'       { TokenExternalChoice }
   '|~|'      { TokenInternalChoice }
@@ -38,14 +34,17 @@ import Data.Char
   '|'        { TokenLabeledAlternative }
   '/\\'      { TokenInterrupt }
   ';'        { TokenSequential }
-  '?'        { TokenReceive $$ }
-  '!'        { TokenSend $$ }
-  ProcId     { TokenProcId $$ }
-  Event      { TokenEvent $$ }
   '('        { TokenOpenBrack }
   ')'        { TokenCloseBrack }
-  '='        { TokenEquals }
-  '=='       { TokenCompare }
+  '='        { TokenAssign }
+  '.'        { TokenDot }
+  '?'        { TokenQuestion }
+  '!'        { TokenExclamation }
+  BinOp      { TokenBinOp $$ }
+  WORD       { TokenWORD $$ }
+  word       { TokenWord $$ }
+  Number     { TokenNumber $$ }
+  Char       { TokenChar $$ }
 
 %left '||' ';'
 %left '/\\'
@@ -54,110 +53,89 @@ import Data.Char
 
 %%
 
-Sentences :: { [Sentence] }
-          : Sentence Sentences { $1 : $2 }
-          | Sentence              { [$1] }
+Program :: { SProg }
+     : Sentences '-O-' Trace    { SProg $1 $3 }
+     | Sentences                { SProg $1 [] }
 
-Sentence :: { Sentence }
-         : ProcId '=' Proc   { Assign $1 $3 }
-         | Proc '==' Proc    { Compare $1 $3 }
+Sentences :: { [SSentence] }
+          : Sentence              { [$1] }
+          | Sentence Sentences    { $1 : $2 }
 
-LabeledAlt :: { Proc }
-           : LabeledAlt '|' LabeledAlt      { ExternalChoice $1 $3 }
-           | Prefix '->' Proc               { Prefix $1 $3 }
+Sentence :: { SSentence }
+         : ProcRef '=' Proc       { SAssign $1 $3 }
+         | STOP ProcRef '=' Proc  { SLimit $2 $4 }
 
-Prefix :: { Prefix }
-       : Event '?'   {% (\s l -> case parseMsg $2 l of
-                           Ok expression -> case expression of 
-                                 Var v -> Ok (ChannelIn $1 v)
-                                 _ -> Failed $ "Linea "++(show l)++": El canal "++(show $1)++(show $2)++" no esta bien definido"
-                           Failed err -> Failed err) }
-       | Event '!'   {% (\s l -> case parseMsg $2 l of
-                           Ok expression -> Ok $ ChannelOut $1 expression
-                           Failed err -> Failed err) }
-       | Event       { Event $1 }
+ProcRef :: { SProcRef }
+        : WORD                   { SProcRef $1 [] }
+        | WORD '.' Params        { SProcRef $1 $3 }
 
-Proc :: { Proc }
-     : Prefix '->' Proc           { Prefix $1 $3 }
-     | LabeledAlt '|' LabeledAlt  { ExternalChoice $1 $3 }
-     | Proc '[]' Proc             { ExternalChoice $1 $3 }
-     | Proc '|~|' Proc            { InternalChoice $1 $3 }
-     | Proc '/\\' Proc            { Interrupt $1 $3 }
-     | Proc ';' Proc              { Sequential $1 $3 }
-     | Proc '||' Proc             { Parallel $1 $3 }
-     | STOP                       { Stop }
-     | SKIP                       { Skip }
-     | ProcId                     { ByName $1 }
+Proc :: { SProc }
+     : Event '->' Proc           { SPrefix $1 $3 }
+     | Proc '|' Proc              
+            {% case ($1, $3) of
+            (SPrefix _ _, SPrefix _ _) -> returnP $ SLabeledAlt $1 $3
+            (SPrefix _ _, SLabeledAlt _ _) -> returnP $ SLabeledAlt $1 $3
+            (SLabeledAlt _ _, SPrefix _ _) -> returnP $ SLabeledAlt $1 $3
+            (SLabeledAlt _ _, SLabeledAlt _ _) -> returnP $ SLabeledAlt $1 $3
+            _ -> (failPos "Se esperaban expresiones con guarda") }
+     | Proc '[]' Proc             { SExternalChoice $1 $3 }
+     | Proc '|~|' Proc            { SInternalChoice $1 $3 }
+     | Proc '/\\' Proc            { SInterrupt $1 $3 }
+     | Proc ';' Proc              { SSequential $1 $3 }
+     | Proc '||' Proc             { SParallel $1 $3 }
+     | STOP                       { SStop }
+     | SKIP                       { SSkip }
+     | ProcRef                    { SByName $1 }
      | '(' Proc ')'               { $2 }
 
-{
+Trace  :: { [Event] }
+       : TraceEv Trace          { $1 : $2 }
+       | TraceEv                { [$1] }
+       | {- empty -}            { [] }
 
-data Token
-  = TokenStop
-  | TokenSkip
-  | TokenArrow
-  | TokenExternalChoice
-  | TokenInternalChoice
-  | TokenParallel
-  | TokenInterrupt
-  | TokenReceive String
-  | TokenSend String
-  | TokenProcId String
-  | TokenEvent String
-  | TokenSequential
-  | TokenOpenBrack
-  | TokenCloseBrack
-  | TokenLabeledAlternative
-  | TokenEOF
-  | TokenEquals
-  | TokenCompare
-  deriving (Eq, Show)
+TraceEv :: { Event }
+        : word '.' TraceIndices   { Event $1 $3 }
+        | word                    { Event $1 [] }
 
-lexer :: (Token -> P a) -> P a
-lexer cont s = case s of
-                    [] -> cont TokenEOF []
-                    ('\n':s)  ->  \line -> lexer cont s (line + 1)
-                    (c:cs)
-                          | isSpace c -> lexer cont cs
-                          | isAlpha c -> lexAlpha (c:cs)
-                    ('-':('-':cs)) -> lexer cont $ dropWhile ((/=) '\n') cs
-                    ('{':('-':cs)) -> consumirBK 0 0 cont cs	
-                    ('-':('}':cs)) -> \ line -> Failed $ "Línea "++(show line)++": Comentario no abierto"
-                    ('-':('>':cs)) -> cont TokenArrow cs
-                    ('/':('\\':cs))-> cont TokenInterrupt cs
-                    ('(':cs) -> cont TokenOpenBrack cs
-                    (')':cs) -> cont TokenCloseBrack cs
-                    ('[':(']':cs)) -> cont TokenExternalChoice cs
-                    ('|':('~':('|':cs))) -> cont TokenInternalChoice cs
-                    ('|':('|':cs)) -> cont TokenParallel cs
-                    ('|':cs) -> cont TokenLabeledAlternative cs
-                    (';':cs) -> cont TokenSequential cs
-                    ('=':('=':cs)) -> cont TokenCompare cs
-                    ('=':cs) -> cont TokenEquals cs
-                    ('!':cs) -> let (msg, rest) = break (\c -> c == ' ' || c == '\n') cs
-                                in cont (TokenSend ('!':msg)) rest 
-                    ('?':cs) -> let (msg, rest) = break (\c -> c == ' ' || c == '\n') cs
-                                in cont (TokenReceive ('?':msg)) rest
-                    unknown -> \line -> Failed $ 
-                     "Linea "++(show line)++": No se puede reconocer "++(show $ take 10 unknown)++ "..."
-                    where lexAlpha cs = case span isAlphaNum cs of
-                              ("STOP", rest) -> cont TokenStop rest
-                              ("SKIP", rest) -> cont TokenSkip rest
-                              (name, rest)
-                                         | isLower (head name)
-                                            && all ((||) <$> isLower <*> isNumber) name -> cont (TokenEvent name) rest
-                                         | isUpper (head name)
-                                            && all ((||) <$> isUpper <*> isNumber) name -> cont (TokenProcId name) rest
-                                         | True -> \ line -> Failed $ "Linea "++(show line)++": Nombre invalido ( "++name++" )"
-                          consumirBK anidado cl cont s = case s of
-                              ('-':('-':cs)) -> consumirBK anidado cl cont $ dropWhile ((/=) '\n') cs
-                              ('{':('-':cs)) -> consumirBK (anidado+1) cl cont cs	
-                              ('-':('}':cs)) -> case anidado of
-                                                  0 -> \line -> lexer cont cs (line+cl)
-                                                  _ -> consumirBK (anidado-1) cl cont cs
-                              ('\n':cs) -> consumirBK anidado (cl+1) cont cs
-                              (_:cs) -> consumirBK anidado cl cont cs     
+Params :: { [SParameter] }
+       : Param                   { [$1] }
+       | Param '.' Params        { $1 : $3 }
 
-file_parse s = parseDecls s 1
-line_parse s = parseDecl s 1
-}
+Param  :: { SParameter }
+       : word                    { SOp $1 "+" 0 }
+       | word BinOp Number       { SOp $1 $2 $3 }
+       | Number                  { SBase $1 }
+       | '(' Param ')'               { $2 }
+
+Events :: { [SEvent] }
+       : Event Events           { $1 : $2 }
+       | Event                  { [$1] }
+
+Event :: { SEvent }
+      : word '.' Indices        { SEvent $1 $3 }
+      | word '!' Index          { SEvent $1 [$3] }
+      | word '?' Index          { SEvent $1 [$3] }
+      | word                    { SEvent $1 [] }
+
+Indices :: { [SIndex] }
+        : Index '!' Index       { $1 : [$3] }
+        | Index '.' Indices     { $1 : $3 }
+        | Index '?' Index       { $1 : [$3] }
+        | Index                 { [$1] }
+
+TraceIndices :: { [Index] }
+              : Number '.' TraceIndices { (IVal (Int $1)) : $3 }
+              | Number '!' TraceIndices { (IVal (Int $1)) : $3 }
+              | Number '?' TraceIndices { (IVal (Int $1)) : $3 }
+              | Number                  { [IVal (Int $1)] }
+              | Char '.' TraceIndices   { (IVal (Char $1)) : $3 }
+              | Char '!' TraceIndices   { (IVal (Char $1)) : $3 }
+              | Char '?' TraceIndices   { (IVal (Char $1)) : $3 }
+              | Char                    { [IVal (Char $1)] }
+
+Index :: { SIndex }
+      : word BinOp Number       { SIOp $1 $2 $3 }
+      | word                    { SIVar $1 }
+      | Char                    { SIVal (Char $1) }
+      | Number                  { SIVal (Int $1) }
+      | '(' Index ')'           { $2 }

@@ -1,0 +1,22 @@
+FIBO.0 = call.0 -> SKIP
+FIBO.1 = call.1 -> SKIP
+FIBO.i = call.i -> (FIBO.(i-1); FIBO.(i-2))
+S = FIBO.5
+
+================== O ==================
+
+call.5
+call.4
+call.3
+call.2
+call.1
+call.0
+call.1
+call.2
+call.1
+call.0
+call.3
+call.2
+call.1
+call.0
+call.1

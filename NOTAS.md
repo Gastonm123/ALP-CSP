@@ -1,0 +1,2 @@
+- NO se pueden usar nombres con numeros, pero SI con guion bajo
+- NO se pueden usar parametros en las trazas
