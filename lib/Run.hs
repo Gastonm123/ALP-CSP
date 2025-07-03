@@ -29,7 +29,7 @@ run :: Prog -> ReaderT Conf IO ()
 run (Prog [] _) = do
     liftIO (putStrLn "! Error: El parser generó una especificacion vacía")
 run (Prog sents []) = do
-    case head (reverse sents) of
+    case last sents of
         (Assign _ espec) -> do
             liftIO (putStrLn "> Especificacion cargada sin trazas para ejecutar.")
             liftIO (putStrLn "> Especificacion:")
@@ -38,7 +38,7 @@ run (Prog sents []) = do
             liftIO (putStrLn ("! Error: la ultima sentencia del archivo debe ser"
                 ++" una asignacion"))
 run (Prog sents tr) = do
-    case head (reverse sents) of
+    case last sents of
         (Assign _ espec) -> do
             {- La ultima declaracion del archivo es la especificacion -}
             ((result, acceptedEvs), espec1) <-

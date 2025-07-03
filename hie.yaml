@@ -1,2 +1,25 @@
 cradle:
-  stack:
+  multi:
+    - path: "./src/Main.hs"
+      config:
+        cradle:
+          stack:
+            component: ":CSP-exe"
+
+    - path: "./src/Main_Gui.hs"
+      config:
+        cradle:
+          stack:
+            component: ":CSP-gui"
+
+    - path: "./lib"
+      config:
+        cradle:
+          stack:
+            component: ":CSP-exe"
+    
+    - path: "./3rd_party"
+      config:
+        cradle:
+          stack:
+            component: ":CSP-exe"
