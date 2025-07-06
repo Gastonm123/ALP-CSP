@@ -13,6 +13,9 @@ test: build .FORCE
 	stack run CSP-stack-exe -- examples/Defectuoso.csp -a
 	stack run CSP-stack-exe -- examples/Interruptor.csp -a
 
+clean:
+	stack clean
+
 HS_FILES := $(wildcard src/*.hs)
 
 .FORCE:

@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Instalacion de Stack, Cabal y GHC similar a GHCUP.
+# GHC no es instalado por Stack.
+
 function base() {
     if [[ $EUID -ne 0 ]]; then
         echo "You must be root to do this." 1>&2

@@ -1,6 +1,6 @@
 .stack-work/
 stack.yaml.lock
-CSP-stack.cabal
+*.cabal
 dist-newstyle
 
 # porque uso el codespace para todo lo que tenga

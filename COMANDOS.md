@@ -42,3 +42,11 @@ stack run -- examples/Especificacion.csp -a
 ```
 make test
 ```
+
+## Listado de comandos
+- `stack path --local-bin`:     mostrar la ruta donde stack instala los ejecutables
+- `stack path --bin-path`:      mostrar el PATH que usa en el entorno de Stack (comun a build y exec)
+- `stack exec -- ghc-pkg list`:         mostrar las bases de datos de paquetes
+- `stack install`:          compila y mueve los ejecutables a la ruta que devuelve `stack path --local-bin`.
+                            si esta ruta existe en nuestro $PATH podemos llamar a los ejecutables sin `stack exec`
+- `stack init`:         crear archivos boilerplate de un proyecto nuevo
