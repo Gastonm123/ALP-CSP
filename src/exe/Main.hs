@@ -1,5 +1,4 @@
 {-# LANGUAGE MultiWayIf #-}
-{-# LANGUAGE LambdaCase #-}
 module Main (main) where
 
 import           ParserMonad

@@ -1,0 +1,21 @@
+.branding {
+    position: absolute;
+    display: flex;
+    top: 30px;
+    right: 60px;
+    text-decoration: none;
+}
+
+.branding-title {
+    margin-top: 1px;
+    font-family: Roboto, monospace;
+    font-weight: 300;
+    color: var(--color-blue1);
+    font-size: 24px;
+}
+
+.logo {
+    width: 90px;
+    height: 24px;
+    margin-left: 0.2rem;
+}

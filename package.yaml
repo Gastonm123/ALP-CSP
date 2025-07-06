@@ -1,4 +1,4 @@
-spec-version:        0.36.0
+# spec-version:        0.36.0
 name:                CSP-sim
 version:             0.1.0.0
 github:              "githubuser/CSP-sim"
@@ -7,6 +7,9 @@ author:              "Author name here"
 maintainer:          "example@example.com"
 copyright:           "2024 Author name here"
 build-type:          "Simple" # no make, configure or custom-setup
+
+# verbatim:
+#  cabal-version: 2.0
 
 # Extra files (if any) to be distributed with the source files of the
 # package:
@@ -52,6 +55,7 @@ library:
   # - any module that we don't want to expose in the public interface
   dependencies:
   - 3rdparty
+  - filepath
 
 internal-libraries:
   3rdparty:
@@ -60,7 +64,7 @@ internal-libraries:
 executables:
   CSP-exe:
     main:                Main.hs
-    source-dirs:         src
+    source-dirs:         src/exe/
     ghc-options:
     - -threaded
     - -rtsopts
@@ -71,7 +75,7 @@ executables:
     - happy:happy == 2.0.2
   CSP-gui:
     main:                 Main_Gui.hs
-    source-dirs:          src
+    source-dirs:          src/gui/
     ghc-options:
     - -threaded
     - -rtsopts

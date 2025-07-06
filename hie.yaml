@@ -1,12 +1,12 @@
 cradle:
   multi:
-    - path: "./src/Main.hs"
+    - path: "./src/exe"
       config:
         cradle:
           stack:
             component: ":CSP-exe"
 
-    - path: "./src/Main_Gui.hs"
+    - path: "./src/gui"
       config:
         cradle:
           stack:
